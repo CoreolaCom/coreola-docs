@@ -1,0 +1,22 @@
+{
+  "name": "coreola-docs",
+  "version": "0.1.1",
+  "private": true,
+  "dependencies": {
+    "next": "^16.2.4",
+    "nextra": "^4.6.1",
+    "nextra-theme-docs": "^4.6.1",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "devDependencies": {
+    "@trivago/prettier-plugin-sort-imports": "^6.0.2",
+    "pagefind": "^1.5.2"
+  },
+  "scripts": {
+    "dev": "next dev -p 3002",
+    "build": "next build",
+    "start": "next start",
+    "postbuild": "pagefind --site .next/server/app --output-path public/_pagefind"
+  }
+}
