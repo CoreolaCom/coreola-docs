@@ -1,1 +1,5 @@
+.idea
+.next
 _pagefind/
+# dependencies
+/node_modules
