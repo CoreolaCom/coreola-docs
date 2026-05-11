@@ -1,0 +1,12 @@
+# `snackBarUtils.ts`
+
+Imperative snackbar API for use outside React components.
+
+- `SnackbarUtilsConfigurator` — Component that captures the notistack handle — mount once under `<SnackbarProvider>`.
+- `snacks` — `success / warning / info / error / toast / closeSnackbar` methods.
+- `dismissNotification(key)` — Returns a callback that dismisses a snackbar by key (useful for "Undo"-style snackbars).
+
+Use this from RTK Query error handlers, route guards, and any other non-component code.
+
+- Source: `src/helpers/snackBarUtils.ts`
+- Import: `import { SnackbarUtilsConfigurator, snacks, dismissNotification } from 'helpers/snackBarUtils'`

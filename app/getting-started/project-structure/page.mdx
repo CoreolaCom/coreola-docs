@@ -1,0 +1,429 @@
+# Project Structure
+
+Coreola is a Vite + React 19 + TypeScript application organized by feature, with clear separation between domain code, shared infrastructure, and the developer toolchain.
+
+This page describes the layout you will see in a fresh checkout and the rules behind it.
+
+---
+
+## Top-level layout
+
+```
+coreola-mui/
+├─ src/                # Application source code
+├─ public/             # Static assets and locale JSON files
+├─ json-server/        # Mock backend (data, generators, custom endpoints)
+├─ plop/               # Code generators (templates and config)
+├─ scripts/            # Build and tooling scripts
+├─ types/              # Global TypeScript declarations
+├─ build/              # Production build output (generated)
+├─ index.html
+├─ package.json
+├─ tsconfig.json
+├─ tsconfig.eslint.json
+├─ vite.config.js
+├─ vitest.config.js
+├─ eslint.config.js
+├─ vite-plugin-csp-nonce.js
+├─ EULA.md / LICENSE / NOTICE / THIRD_PARTY_LICENSES.md
+└─ README.md
+```
+
+The interesting parts live in `src/`. Everything else is configuration or infrastructure that supports it.
+
+---
+
+## The `src/` folder
+
+```
+src/
+├─ api/             # RTK Query API slices
+├─ app/             # Application bootstrap (store, router, routes config, i18n)
+├─ assets/          # Fonts, icons, images
+├─ components/      # Reusable shared UI components
+├─ features/        # Domain modules (the bulk of the app)
+├─ helpers/         # Shared utility functions
+├─ hooks/           # Global custom React hooks
+├─ layouts/         # Page layout wrappers
+├─ slices/          # Redux slices (non-API state)
+├─ themes/          # Light and dark theme definitions
+├─ utils/           # Standalone low-level utilities
+├─ App.tsx          # Root component
+├─ App.test.tsx
+├─ index.tsx        # Entry point
+├─ index.css
+├─ mdx.d.ts
+├─ reportWebVitals.ts
+└─ setupTests.ts
+```
+
+Each folder has a single, predictable responsibility. New code goes into the folder that matches what it does — never into a generic `lib/` or `common/`.
+
+---
+
+## `src/app/` — application bootstrap
+
+Everything required to start the app and tie its pieces together.
+
+```
+app/
+├─ app.types.ts     # Shared application types (Route, etc.)
+├─ i18n.ts          # i18next setup (chained backends, language detector)
+├─ reducers.ts      # Combined reducers + redux-persist config
+├─ router.tsx       # Builds the React Router instance from routes config
+├─ routes.ts        # Single source of truth for the route tree
+├─ settings.ts      # Application-wide settings
+└─ store.ts         # Redux store
+```
+
+Routing is **config-driven**: every page is declared as a `Route` object inside `routes.ts`. Adding a page never requires editing JSX in the router itself. See [Routing](/development/routing).
+
+---
+
+## `src/api/` — RTK Query API slices
+
+Each folder is one API surface, exposing endpoints, generated hooks, and types.
+
+```
+api/
+├─ abilities/
+├─ assessments/
+├─ auth/
+├─ customers/
+├─ dashboard/
+├─ features/        # Feature flags
+├─ meta/
+├─ notifications/
+├─ recipients/
+├─ roles/
+├─ search/
+├─ segments/
+├─ tableColumns/
+├─ users/
+└─ usersInfo/
+```
+
+Each slice follows the same shape:
+
+```
+<resource>/
+├─ <resource>.api.ts      # createApi endpoint definitions
+├─ <resource>.hooks.ts    # Custom hooks that wrap RTK Query hooks
+└─ <resource>.types.ts    # Request/response types
+```
+
+See [API Layer](/development/api-layer).
+
+---
+
+## `src/features/` — domain modules
+
+Features are the largest folder and the heart of the app. Each top-level folder is a business area.
+
+```
+features/
+├─ application/         # Admin: accounts, settings, system
+│  ├─ accounts/         #   Users, Roles, Abilities
+│  ├─ settings/         #   General, Feature Flags
+│  └─ system/           #   Monitoring
+│
+├─ auth/                # Sign in, Sign up, Send password
+│  ├─ signIn/
+│  ├─ signUp/
+│  └─ sendPassword/
+│
+├─ collections/         # Operational data
+│  ├─ assessments/      #   List, Details, Queue
+│  └─ customers/        #   Customers, Segments, server-side list
+│
+├─ dashboards/          # Application + Assessments dashboards
+│  ├─ application/
+│  └─ assessments/
+│
+├─ documentation/       # In-app documentation pages (this section)
+│  ├─ gettingStarted/
+│  ├─ overview/
+│  ├─ designSystem/
+│  ├─ uiPatterns/
+│  ├─ modules/
+│  ├─ development/
+│  ├─ customization/
+│  ├─ deployment/
+│  └─ changelog/
+│
+└─ user/                # Profile flows (name & email, photo, password)
+   ├─ profile/
+   ├─ User.tsx
+   ├─ UserLoader.tsx
+   └─ user.types.ts
+```
+
+Component showcase areas — `coreComponents/` and `muiComponents/` — also live under `features/` and are documented separately under [UI Components](/design-system/components).
+
+---
+
+## MVVM pattern inside a feature
+
+Every non-trivial page follows the same layout. The detail page of an assessment is the canonical example:
+
+```
+features/collections/assessments/details/
+├─ Details.tsx            # The page component (the "View")
+├─ details.types.ts       # Shared types for hooks and views
+├─ presenter.ts           # Pure data shaping for the view
+├─ hooks/                 # The "Model" — business logic and state
+│  ├─ useDetailsModel.ts          # Top-level model hook
+│  ├─ useAssignFindingOwner.ts
+│  ├─ useCreateFinding.ts
+│  ├─ useEditAssessment.ts
+│  ├─ useEvidenceRequest.ts
+│  ├─ useUpdateEvidenceStatus.ts
+│  └─ useUpdateFindingStatus.ts
+└─ views/                 # Pure presentation components
+   ├─ OverviewCardView.tsx
+   ├─ DecisionCardView.tsx
+   ├─ EvidenceCardView.tsx
+   ├─ FindingsCardView.tsx
+   ├─ ActivityCardView.tsx
+   ├─ NewFindingDialogView.tsx
+   ├─ RequestEvidenceDialogView.tsx
+   ├─ AssignFindingOwnerDialogView.tsx
+   ├─ ChangeEvidenceStatusDialogView.tsx
+   ├─ ChangeFindingStatusDialogView.tsx
+   ├─ OverviewCardEditModeView.tsx
+   ├─ ChipGroupView.tsx
+   └─ MetricValueView.tsx
+```
+
+The rules:
+
+- The **page component** (`Details.tsx`) calls a single top-level model hook (`useDetailsModel`) and passes its output to view components. It owns nothing.
+- The **model hook** holds all state, side effects, mutations, and dialog open/close flags.
+- **Views** are dumb. They receive props, render UI, and call back into handlers from the model. No `useState`, no API calls.
+- **Types** are shared via the `*.types.ts` file so the model and views agree on shapes.
+
+This pattern is enforced through the Plop generators — see [Adding a New Module](/customization/adding-new-module).
+
+---
+
+## `src/components/` — shared UI components
+
+Around 40 reusable building blocks. Each lives in its own folder with a `Component.tsx`, types, and (where needed) sub-files.
+
+Notable components:
+
+- `table/` — the production-grade data table (server-side everything, column reorder, export, URL state)
+- `dataList/` — list rendering with loading and empty states
+- `mdxDoc/` — the MDX renderer used by these documentation pages
+- `kpiCard/`, `statsLine/`, `priority/`, `risk/`, `status/`, `point/`, `userBadge/` — data display
+- `confirmDialog/`, `detailsDialog/`, `emptyState/`, `errorBoundary/`, `linearProgress/`, `passwordStrength/`, `skeleton/` — feedback and states
+- `editableField/`, `editImage/`, `phoneInput/`, `searchInput/`, `textField/`, `toggleInput/`, `datePicker/` — inputs
+- `breadcrumbs/`, `chapter/`, `menu/`, `scrollbars/` — layout and navigation
+- `actionMenu/` — contextual popovers
+- `tabs/` — MUI navigation showcase under `src/features/muiComponents/navigation/tabs`
+- `avatarCard/`, `card/`, `paper/` — surfaces
+- `themeSwitch/`, `languageSwitch/`, `privateRoute/`, `snackbarProvider/` — system
+
+A live, browsable showcase of every component is available under `/core-components` and `/mui-components` in the running app.
+
+---
+
+## `src/layouts/`
+
+```
+layouts/
+├─ authLayout/         # Layout used by /auth/* pages (sign in, sign up, etc.)
+├─ dashboardLayout/    # The main app shell (sidebar, header, content area)
+├─ toolbar/            # Page toolbar wrapper (used by documentation pages)
+└─ verticalTabs/       # Vertical tab layout for sub-sections
+```
+
+Layouts are referenced from `routes.ts` via the `importUrl` field of a parent route — child routes render inside.
+
+---
+
+## `src/slices/` — Redux slices (non-API state)
+
+```
+slices/
+├─ app/           # App-wide UI state (theme, language, active requests count, etc.)
+├─ breadcrumbs/   # Breadcrumb stack for the dashboard layout
+└─ user/          # Current user (auth token, profile, abilities)
+```
+
+Persistence is configured in `src/app/reducers.ts`:
+
+- The root persist whitelist is `['user']` — auth token, profile, abilities.
+- The `app` slice has its own nested persist config that persists everything except `activeRequestsCount` — so theme, language, and similar UI preferences survive reloads.
+- `breadcrumbs` is in-memory only.
+- API caches are intentionally not persisted; they refetch on next load.
+
+API state is handled by RTK Query and lives under each `src/api/<resource>/` slice — not here.
+
+See [State Management](/development/state-management).
+
+---
+
+## `src/themes/`
+
+```
+themes/
+├─ defaults/      # Shared tokens (colors, typography, options)
+├─ light/         # Light palette, components overrides, shadows
+├─ dark/          # Dark palette, components overrides, shadows
+├─ interface.ts   # Theme type extensions
+└─ themes.ts      # Theme factory
+```
+
+The current theme is stored in the `app` slice and switched at runtime. See [Theme](/customization/theme).
+
+---
+
+## `src/hooks/` — global hooks
+
+Reusable hooks that are not tied to a single feature. Highlights:
+
+- `useAbility` — CASL ability instance for the current user
+- `useFeatureFlag` — read feature flags from store
+- `useRoutes`, `useCurrentRoute`, `useSiblingsRoutes`, `useGetMenuTree` — routing helpers
+- `useServerPaginatedTable`, `useServerTableUrlState` — table state with URL persistence
+- `useBreadcrumbs`, `useBreadcrumbSectionTitle`
+- `useFieldsFromError`, `useAddYupRules` — form helpers
+- `useExportAllRows`, `useDebounceValue`, `useSearchParams`, `useSearchKeys`
+- `useNavigateWithQuery`, `useRouteValuesGuard`, `useStateValues`, `useWatchMemoize`
+- `useAvatarEditor`, `useCountryAutocomplete`, `usePhrase`, `usePrevious`, `useTheme`, `useIsInViewport`, `useGetBounds`, `useButtonMinWidth`, `useParentDiffX`
+
+Per-feature hooks belong inside that feature's `hooks/` folder, not here.
+
+---
+
+## `src/helpers/` — shared utilities
+
+Pure functions and small modules used across features.
+
+- `baseQuery.ts` — RTK Query base query with auth and centralized error handling
+- `rbac.ts` — CASL ability building, route filtering, ability checks
+- `snackBarUtils.ts` — global notistack accessor (`snackActions`)
+- `dateUtils.ts`, `formatPhoneNumber.ts`, `phrase.ts` — formatting
+- `dirtyData.ts`, `fieldsFromError.ts`, `filters.ts` — form and table helpers
+- `checkTokenIsValid.ts`, `getPersistData.ts`, `persistPurgeCheck.ts` — auth and persistence
+- `getNamespaces.ts` — i18n namespace helper
+- `styledProps.ts`, `utils.ts` — misc
+
+---
+
+## `src/utils/`
+
+A smaller set of standalone, dependency-free utilities.
+
+```
+utils/
+├─ canvas.ts
+└─ voidFromPromise.ts
+```
+
+The split between `helpers/` and `utils/` is by dependencies: `utils/` knows nothing about Redux, MUI, or the rest of the app; `helpers/` may.
+
+---
+
+## `public/`
+
+```
+public/
+├─ favicon.ico
+├─ images/
+├─ index.css
+├─ locales/         # Per-language JSON translation files
+│  ├─ en/
+│  └─ uk/
+├─ logo192.png
+├─ logo512.png
+├─ manifest.json
+└─ robots.txt
+```
+
+Translation files are loaded at runtime by i18next via HTTP backend. Adding a language means adding a folder here and registering it in `app/i18n.ts`.
+
+---
+
+## `json-server/` — mock backend
+
+```
+json-server/
+├─ data/           # JSON fixtures
+├─ endpoints/      # Custom Express routes (auth, complex queries)
+├─ generators/     # Faker-based seed generators
+├─ faker.cjs       # Faker configuration
+├─ json-db.cjs     # Database file generation
+└─ server.cjs      # Express server entry
+```
+
+Run with `npm run json-server`. Regenerate the database with `npm run merge-data`. See [Mock Backend](/development/mock-backend).
+
+---
+
+## `plop/` — code generators
+
+```
+plop/
+├─ component/        # Templates for a plain shared component
+├─ componentDoc/     # Templates for a documented component (with locales)
+├─ documentation/    # Templates for a documentation page (this section)
+├─ mvvm/             # Templates for an MVVM feature page
+└─ templates.cjs     # Plop generator definitions
+```
+
+Run `npm run plop` and pick a generator. Available generators:
+
+- `mvvm-component` — full MVVM feature page (View + Model hook + views/ + types)
+- `component-doc` — showcase component with localized MDX
+- `documentation-page` — documentation page like this one (Toolbar + MDXDocAnchors + MDXDoc + localized MDX)
+- `documentation-section` — documentation section root with `VerticalTabs + Outlet`
+- `component` — shared component folder under `src/components`
+
+---
+
+## `scripts/` and `types/`
+
+```
+scripts/
+└─ extract-translations.js   # Extract i18n keys from source
+
+types/
+├─ globals.d.ts
+├─ i18next.d.ts
+├─ mdx.d.ts
+├─ react-app-env.d.ts
+├─ svg.d.ts
+└─ theme.d.ts
+```
+
+Global declarations let TypeScript understand non-`.ts` modules (SVG, MDX) and augment third-party types (i18next namespaces, MUI theme).
+
+---
+
+## Where things go — quick reference
+
+| You are adding...                            | Put it in                                              |
+|----------------------------------------------|--------------------------------------------------------|
+| A new business page                          | `src/features/<area>/<page>/` (use Plop)               |
+| A new shared UI component                    | `src/components/<componentName>/`                      |
+| A new API resource                           | `src/api/<resource>/`                                  |
+| A new global hook (used by 2+ features)      | `src/hooks/`                                           |
+| A hook used by one feature only              | `src/features/<area>/<page>/hooks/`                    |
+| A new Redux slice (non-API)                  | `src/slices/<name>/`                                   |
+| A new layout                                 | `src/layouts/<name>/`                                  |
+| A new route                                  | Add to `src/app/routes.ts`                             |
+| A new translation key                        | `public/locales/<lang>/<namespace>.json`               |
+| A new theme token                            | `src/themes/defaults/` (or per-mode in `light`/`dark`) |
+| A new documentation page                     | `src/features/documentation/<group>/<page>/` (use Plop)|
+
+---
+
+## Next steps
+
+- [Installation](/getting-started/installation)
+- [Running Locally](/getting-started/running-locally)
+- [Architecture Overview](/overview/architecture)
+- [Tech Stack](/overview/tech-stack)
+- [Adding a New Module](/customization/adding-new-module)

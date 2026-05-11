@@ -1,0 +1,251 @@
+# Coding Conventions
+
+This page covers the **how it should look** rules — naming, file structure, imports, formatting, and the linters that enforce them.
+
+The architecture (MVVM, model hooks, views) is covered separately in [Architecture](/overview/architecture). This page focuses on the surface conventions.
+
+- Linting: `eslint.config.js`, `eslint.lint-staged.config.js`
+- Formatting: `.prettierrc.json`
+- Hooks: `.husky/pre-commit`, `lint-staged` config in `package.json`
+
+---
+
+## File and folder naming
+
+| Item                    | Convention                  | Example                                   |
+|-------------------------|-----------------------------|-------------------------------------------|
+| Page / view component   | `PascalCase.tsx`            | `Details.tsx`, `OverviewCardView.tsx`     |
+| Section root component  | `PascalCase.tsx`            | `Accounts.tsx`, `GettingStarted.tsx`      |
+| Folder (feature/page)   | `camelCase/`                | `assessments/`, `customerDetails/`        |
+| Hook                    | `useCamelCase.ts(x)`        | `useDetailsModel.ts`, `useAvatarEditor.ts` |
+| Types file              | `<name>.types.ts`           | `details.types.ts`                        |
+| Styled file             | `<name>.styled.ts`          | `list.styled.ts`                          |
+| API slice               | `<resource>.api.ts`         | `assessments.api.ts`                      |
+| API hooks               | `<resource>.hooks.ts`       | `assessments.hooks.ts`                    |
+| MDX doc                 | `PascalCase.mdx`            | `Introduction.mdx`                        |
+
+Files match the component name they default-export. Folders use the camelCase of that name.
+
+---
+
+## Import order
+
+Coreola uses `@trivago/prettier-plugin-sort-imports` to enforce a single import order. From `.prettierrc.json`:
+
+```json
+"importOrder": [
+  "^@mui/(.*)$",
+  "^components/(.*)$",
+  "^hooks/(.*)$",
+  "^helpers/(.*)$",
+  "^api/(.*)$",
+  "^features/(.*)$",
+  "^[./]"
+]
+```
+
+Order of groups, top to bottom:
+
+1. **External (default)** — `react`, lodash, anything not matched below.
+2. **`@mui/*`** — MUI packages.
+3. **`components/*`** — Coreola shared components.
+4. **`hooks/*`** — Coreola global hooks.
+5. **`helpers/*`** — Coreola helpers.
+6. **`api/*`** — RTK Query slices.
+7. **`features/*`** — Feature modules.
+8. **Relative imports (`./`, `../`)** — last.
+
+Specifiers within an import statement are alphabetized. Groups are not separated by blank lines — Prettier flattens them. **You do not maintain this by hand.** Prettier rewrites on save and in lint-staged.
+
+---
+
+## Path aliases
+
+Aliases are declared in **two places** and must match:
+
+- **`vite.config.js`** — `resolve.alias` for runtime resolution.
+- **`tsconfig.json`** — `paths` for TypeScript resolution.
+
+The aliases:
+
+```
+api, app, assets, components, features, helpers, hooks,
+layouts, slices, themes, utils
+```
+
+`vitest.config.js` extends the alias list with two more: `componentsDS`, `docs`, `routes`, `types` — used in tests.
+
+Adding a new alias means editing both `vite.config.js` and `tsconfig.json`. After editing `tsconfig.json`, restart your editor's TypeScript server.
+
+---
+
+## ESLint rules
+
+`eslint.config.js` is a flat config (ESLint v9). Enabled plugins:
+
+- `react`, `react-hooks`, `react-refresh`
+- `@typescript-eslint`
+- `import`
+- `jsx-a11y`
+- `vitest`
+- `prettier`
+
+Notable rules:
+
+- **Forbid React UMD globals.** Always `import { useState } from 'react'` — never `React.useState`.
+- **No nested ternary.** Refactor or use an `if` chain.
+- **No console.** Warning in dev (`eslint.config.js`), **error** in lint-staged (`eslint.lint-staged.config.js`).
+- **Exhaustive deps.** Warning in dev, error in lint-staged.
+- **Unused vars.** Allowed if prefixed with `_` (e.g., `_unusedParam`). Error otherwise.
+
+The lint-staged config escalates dev warnings to errors so they cannot slip into a commit.
+
+---
+
+## Prettier
+
+From `.prettierrc.json`:
+
+```json
+{
+  "printWidth": 160,
+  "tabWidth": 2,
+  "useTabs": false,
+  "singleQuote": true,
+  "trailingComma": "all"
+}
+```
+
+- **Print width 160.** Long for a reason: dense table column definitions and JSX with many props read better wider than 80.
+- **2 spaces, no tabs.**
+- **Single quotes, all trailing commas.**
+
+Plugins:
+
+- `@trivago/prettier-plugin-sort-imports` (configured above).
+- The CSS/SCSS/MD prettier defaults via lint-staged.
+
+---
+
+## Git hooks
+
+`.husky/pre-commit` runs:
+
+```bash
+npx lint-staged
+```
+
+`lint-staged` (in `package.json`) does:
+
+- `*.{css,scss,md}` → `prettier --write`
+- `*.{js,jsx,ts,tsx}` → `prettier --write` → `eslint --config eslint.lint-staged.config.js`
+
+This is the only quality gate before commit. CI may add type-check (`tsc --noEmit`) and tests (`npm run test:ci`).
+
+The hooks are installed by the `prepare` npm script (which uses `husky install`). On a fresh checkout, `npm install` triggers `prepare` automatically.
+
+---
+
+## Function vs class
+
+Function components only. No class components. Hooks for all stateful logic.
+
+Helper modules are typically a default export of a single function (`getBaseQuery`, `rem`, `phrase`). When a module exports multiple related functions, prefer named exports for tree-shaking.
+
+---
+
+## TypeScript
+
+#### Strictness
+
+`tsconfig.json` has strict typing enabled. The most common knobs:
+
+- `strict: true`
+- `noUncheckedIndexedAccess` (where set) makes indexed access return `T | undefined`. Lean into this.
+
+#### Types in `.types.ts` files
+
+Every non-trivial feature has a `<name>.types.ts` file co-located with the component. This is the **shared contract** between the model hook, the views, and the API.
+
+Place types in a `.types.ts` file when:
+
+- They are shared by more than one file inside the feature.
+- They describe the feature's public API (model hook return type, view props).
+
+Inline types are fine for things used in one place.
+
+#### `type` vs `interface`
+
+Coreola uses `type` aliases by default — they compose better via unions and intersections. Reach for `interface` only when extending from a third-party `interface` is required.
+
+#### Avoiding `any`
+
+`any` is allowed but heavily discouraged. Prefer:
+
+- `unknown` for "I do not know the shape yet" — forces narrowing at the use site.
+- Explicit generic parameters when writing utilities.
+- `Record<string, unknown>` for "object of stuff to be narrowed".
+
+---
+
+## Where state lives — the short rule
+
+| Where      | When                                                              |
+|------------|-------------------------------------------------------------------|
+| URL        | Anything users should be able to share or bookmark                |
+| Redux slice| Cross-component, persistent UI state                              |
+| Model hook | Per-page state and orchestration                                  |
+| `useState` | Truly local — one component, no cross-references                  |
+
+See [State Management](/development/state-management) for the deep version.
+
+---
+
+## Comments
+
+Coreola code is sparing with comments. The conventions:
+
+- **No comments for what the code does.** Function and variable names should make that clear.
+- **Comments for why.** Non-obvious constraints, workarounds, decisions that future-you will second-guess.
+- **JSDoc on public APIs.** Shared components and helpers benefit from a one-line summary plus param/return descriptions — IDE intellisense reads them.
+- **No comments narrating the obvious** ("Increment the counter").
+
+---
+
+## Anti-patterns
+
+- **Re-implementing import sorting by hand.** Prettier does it. Trust the formatter.
+- **Wide `any` types** to silence the compiler. The error is usually telling you something real.
+- **Long files.** Coreola components rarely cross 200 lines. If a model hook crosses 300, split it (see how `useDetailsModel` composes per-action hooks).
+- **Mixing exports.** One file, one default export. Named exports for siblings (types, helpers) are fine; multiple defaults are not.
+- **`React.FC` types.** Use named function declarations with explicit return types where ambiguity exists.
+- **Side effects in render.** Effects belong in `useEffect` or in the model hook. The view layer is render-only.
+
+---
+
+## What lint catches and what it does not
+
+ESLint and Prettier catch:
+
+- Import order
+- Formatting
+- Many React mistakes (missing keys, exhaustive-deps, hooks rules)
+- Console statements
+- Unused variables
+
+They do **not** catch:
+
+- Architecture violations (a view calling `useDispatch`).
+- Naming smells (helper that should be a hook).
+- Type laziness (`any`).
+- Over-large hooks or files.
+
+Those land in code review. Read the architecture pages so you can catch them.
+
+---
+
+## Next steps
+
+- [Architecture](/overview/architecture) — the MVVM rules these conventions support
+- [State Management](/development/state-management) — where state goes by kind
+- [Adding a New Module](/customization/adding-new-module) — the conventions in a worked example

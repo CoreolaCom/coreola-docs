@@ -1,0 +1,10 @@
+# `voidFromPromise.ts`
+
+Wrap an async callback as a `void`-returning handler.
+
+- `voidFromPromise(fn)` — Wraps a sync-or-async callback so it returns `void` and swallows (but logs) any rejection.
+
+Use to pass async handlers to props typed `() => void` — e.g. a button `onClick`.
+
+- Source: `src/helpers/voidFromPromise.ts`
+- Import: `import { voidFromPromise } from 'helpers/voidFromPromise'`

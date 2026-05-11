@@ -1,0 +1,151 @@
+# Environment
+
+Coreola is configured through environment variables loaded by Vite at build and dev time. This page lists every variable the app reads, where it is consumed, and the default behavior when the variable is not set.
+
+---
+
+## How environment variables are loaded
+
+Vite reads `.env` files from the project root using its standard precedence:
+
+| File                      | Loaded for           | Tracked in git? |
+|---------------------------|----------------------|-----------------|
+| `.env`                    | All modes            | Yes             |
+| `.env.local`              | All modes            | **No** (gitignored) |
+| `.env.<mode>`             | Specific mode only   | Yes             |
+| `.env.<mode>.local`       | Specific mode only   | **No** (gitignored) |
+
+**Modes** correspond to the `--mode` flag passed to Vite (defaults: `development` for `npm start`, `production` for `npm run build`, `analyze` for `npm run analyze`, `development` for `npm run build-dev`).
+
+A reference template lives in `.env.sample`. Copy it to `.env.local` for your machine-specific overrides:
+
+```bash
+cp .env.sample .env.local
+```
+
+---
+
+## Variable reference
+
+#### `VITE_APP_SYSTEM_API_URL`
+
+The base URL of the **real backend**.
+
+- **Used by:** `src/app/settings.ts` (`settings.API.SYSTEM_API`).
+- **Read by:** the RTK Query base query that talks to the production backend.
+- **Default when unset:** `'/api'`.
+- **Typical values:** `https://api.example.com` in production, empty in mock-only development.
+
+#### `VITE_APP_MOCKUP_API_URL`
+
+The base URL of the **mock backend** (json-server).
+
+- **Used by:** `src/app/settings.ts` (`settings.API.MOCKUP_API`).
+- **Default when unset:** `'/api'`.
+- **`.env.sample` value:** `http://localhost:7000`.
+- **Typical values:** `http://localhost:7000` for local dev. Empty when hitting only the real API.
+
+#### `VITE_APP_I18N_API_URL`
+
+Optional remote endpoint for translation files.
+
+- **Used by:** `src/app/settings.ts` (`settings.API.I18N_API`).
+- **Default when unset:** empty string. i18next falls back to the local HTTP backend reading `public/locales/<lang>/<namespace>.json`.
+
+#### `VITE_BASE_URL`
+
+The public base path Vite serves the app under.
+
+- **Used by:** `vite.config.js` (`base` option).
+- **Default when unset:** `'/'`.
+- **Typical values:** `'/'` for root deployments, `'/admin/'` when Coreola is hosted under a sub-path.
+
+#### `JSON_SERVER_PORT`
+
+The port the mock backend listens on.
+
+- **Used by:** `json-server/server.cjs`.
+- **Default when unset:** `7000`.
+- Must match the port portion of `VITE_APP_MOCKUP_API_URL`. If you change one, change the other.
+
+---
+
+## Variables Vite injects automatically
+
+These are **not** something you set in `.env` — they are produced by `vite.config.js` and exposed to the app:
+
+| Name                          | Source                                    | Use                              |
+|-------------------------------|-------------------------------------------|----------------------------------|
+| `VITE_APP_VERSION`            | `${packageName}_${packageVersion}#${nanoid}` | Build identifier              |
+| `VITE_APP_VERSION_NUMBER`     | Trimmed `package.json` version            | Display-friendly version string  |
+
+`settings.version` reads `VITE_APP_VERSION` and shows it in the application footer.
+
+---
+
+## How variables become available in code
+
+Vite's `define` option in `vite.config.js` exposes the loaded `.env` values plus the injected version variables on `process.env`:
+
+```js
+define: {
+  global: 'window',
+  'process.env': exposedEnvVars,
+}
+```
+
+Inside application code, read them via `process.env.VITE_APP_*`:
+
+```ts
+// src/app/settings.ts
+SYSTEM_API: process.env.VITE_APP_SYSTEM_API_URL ?? '/api',
+```
+
+Only variables prefixed with `VITE_` are exposed to the browser. Anything else (for example `JSON_SERVER_PORT`) is server-side only and lives in the json-server process.
+
+---
+
+## Recommended setups
+
+### Local development against the mock backend
+
+```env
+JSON_SERVER_PORT=7000
+VITE_APP_MOCKUP_API_URL=http://localhost:7000
+```
+
+Leave `VITE_APP_SYSTEM_API_URL` empty.
+
+### Local development against a real backend
+
+```env
+VITE_APP_SYSTEM_API_URL=https://staging-api.example.com
+VITE_APP_MOCKUP_API_URL=http://localhost:7000
+```
+
+Both can be set — endpoints route to one or the other based on the API slice that owns them. See [API Layer](/development/api-layer).
+
+### Production build
+
+```env
+VITE_APP_SYSTEM_API_URL=https://api.example.com
+VITE_BASE_URL=/
+```
+
+`VITE_APP_MOCKUP_API_URL` should generally not be set in production builds.
+
+---
+
+## Security notes
+
+- Anything prefixed with `VITE_` is **bundled into the client**. Never put secrets there.
+- `.env.local` is gitignored — keep it that way for any machine-specific values.
+- Server-side json-server settings (`JSON_SERVER_PORT`, anything in `json-server/`) never reach the browser.
+
+---
+
+## Next steps
+
+- [Running Locally](/getting-started/running-locally) — dev server tips, ports, hot reload
+- [API Layer](/development/api-layer) — how `SYSTEM_API` and `MOCKUP_API` are routed
+- [Mock Backend](/development/mock-backend) — json-server internals

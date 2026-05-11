@@ -1,0 +1,15 @@
+# `rbac.ts`
+
+The whole RBAC plumbing: ability construction, feature flags, and route filtering.
+
+- `buildAbilityFromMatrix(abilitiesMatrix?)` — Builds a CASL `AppAbility` from the user's `abilities` matrix.
+- `canAnyAbility(ability, abilityCan?)` — Returns `true` when **any** of the required `subject.action` keys are allowed.
+- `buildFeatureFlagsMap(features?)` — Converts the features API payload into a `Record<string, boolean>` lookup.
+- `canFeatureFlag(featureFlags, featureKey)` — Single-key feature check.
+- `canAnyFeatureFlag(featureFlags, featureFlagCan?)` — Multi-key feature check. Passes by default while flags are loading.
+- `filterRoutesByAbility(routes, ability, parentPath?, featureFlags?)` — Recursively filters a route tree by ability and feature flags, rewrites child redirects, and keeps public / wildcard routes.
+
+Most app code only needs `useAbility`; this file is what powers it. See [Permissions](/customization/permissions).
+
+- Source: `src/helpers/rbac.ts`
+- Import: `import { buildAbilityFromMatrix, canAnyAbility, buildFeatureFlagsMap } from 'helpers/rbac'`

@@ -1,0 +1,14 @@
+# `useServerPaginatedTable`
+
+Sits on top of `useServerTableUrlState` and merges in user-saved settings, exposes hydration status, total row count, and ready-to-spread server-pagination props.
+
+```ts
+useServerPaginatedTable<T>(props): Readonly<UseServerPaginatedTableResponse<T>>
+```
+
+**Returns** — A readonly state object covering URL state + saved settings + pagination helpers.
+
+**Use when** — For production tables that need URL state **and** persisted per-user preferences.
+
+- Source: `src/hooks/useServerPaginatedTable.ts`
+- Import: `import useServerPaginatedTable from 'hooks/useServerPaginatedTable'`

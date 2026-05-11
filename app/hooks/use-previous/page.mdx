@@ -1,0 +1,14 @@
+# `usePrevious`
+
+Returns the value committed in the **previous** render.
+
+```ts
+usePrevious<T>(value: T): T | undefined
+```
+
+**Returns** — The value from the previous render, or `undefined` before one has been committed.
+
+**Use when** — When an effect needs to compare the current and previous value to detect transitions.
+
+- Source: `src/hooks/usePrevious.ts`
+- Import: `import usePrevious from 'hooks/usePrevious'`

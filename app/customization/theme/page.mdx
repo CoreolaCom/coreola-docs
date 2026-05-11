@@ -1,0 +1,223 @@
+# Theme
+
+Coreola ships **two themes** — light and dark — built on a shared token base. This page covers how the theme is assembled, how to tune it for your brand, and how to add or replace a theme.
+
+The design-language reference (when to use which color, how spacing pairs with type) lives in the [Design System](/design-system/principles) section. This page is the **how to change it** companion.
+
+- Source: `src/themes/`
+- Switch: `src/components/themeSwitch/ThemeSwitch.tsx`
+- State: `src/slices/app/app.slice.ts` (`getCurrentTheme`, `setCurrentTheme`)
+
+---
+
+## File map
+
+```
+src/themes/
+├─ themes.ts           # Theme factory exporting { light, dark }
+├─ interface.ts        # Type extensions on MUI's Theme interface
+├─ defaults/
+│  ├─ colors.ts        # Raw color scales (violet, garden, sand, ...)
+│  ├─ options.ts       # Shared MUI theme options (spacing, components, typography, breakpoints, shape)
+│  ├─ componentsOwn.ts # Coreola-specific MUI component variants
+│  └─ helpers.ts       # rem(), getTransition(), spacingNumber()
+├─ light/
+│  ├─ palette.ts       # Light-mode palette (mode: 'light', primary, secondary, ...)
+│  ├─ components.ts    # Light-mode-only component overrides
+│  └─ shadows.ts       # Light elevation scale
+└─ dark/
+   ├─ palette.ts       # Dark-mode palette
+   ├─ components.ts    # Dark-mode-only component overrides
+   └─ shadows.ts       # Dark elevation scale
+```
+
+`themes.ts` composes each mode by merging `defaults/options.ts` with the mode-specific palette, components, and shadows. The result is two `Theme` objects MUI can consume.
+
+---
+
+## How a theme is switched at runtime
+
+1. The `ThemeSwitch` component dispatches `setCurrentTheme({ alias: 'dark' })`.
+2. The `app` slice updates which entry in `app.themes` has `current: true`.
+3. `getCurrentTheme` selector returns the active alias.
+4. `App.tsx` reads the alias and feeds the corresponding `Theme` object into MUI's `<ThemeProvider>`.
+5. The whole tree re-renders against the new theme.
+
+The active alias is persisted in the `app` slice (see [State Management](/development/state-management)), so the user's choice survives reloads.
+
+---
+
+## Customizing palette colors
+
+The fastest way to rebrand Coreola is to change the **scales** in `src/themes/defaults/colors.ts`. The palette mappings in `light/palette.ts` and `dark/palette.ts` reference scales by name — so swapping the underlying values updates everything coherently.
+
+#### Example: change the primary brand color
+
+The primary brand is `violet`. To switch to a different hue, change the values in the `violet` scale:
+
+```ts
+// src/themes/defaults/colors.ts
+export const violet = {
+  50: '#...', 100: '#...', 200: '#...', 300: '#...', 400: '#...',
+  500: '#...',  // ← main
+  600: '#...', 700: '#...', 800: '#...', 900: '#...',
+};
+```
+
+Generate the ramp from your brand color with a tool like [Material Design 3 color builder](https://m3.material.io/theme-builder), then paste the values in. The palette mapping still says `primary: { main: violet[500] }` — it now resolves to the new color.
+
+If you want to rename `violet` itself, also update:
+
+- `light/palette.ts` and `dark/palette.ts` (the role mappings).
+- Any direct references to `violet` in component overrides (`options.ts`).
+
+#### Adding a new scale
+
+For a new tonal color (e.g., a "teal" accent), follow [Colors → Adding a new color](/design-system/colors).
+
+---
+
+## Tuning component defaults
+
+The `components` block in `src/themes/defaults/options.ts` is where MUI components are styled at a single point. It is **already extensive** in Coreola — most MUI primitives have entries.
+
+To tune a component:
+
+1. Find the relevant `Mui*` entry in `options.ts`.
+2. Edit `defaultProps`, `styleOverrides`, or `variants`.
+3. Save — Vite hot-reloads the theme; every instance of the component picks up the change.
+
+#### Light-mode-only or dark-mode-only changes
+
+`defaults/options.ts` is mode-agnostic. For mode-specific overrides, edit:
+
+- `light/components.ts` — applied only in light mode.
+- `dark/components.ts` — applied only in dark mode.
+
+A common case: the `MuiPaper` border looks fine in light but needs a slightly different rule in dark. Put the dark variant in `dark/components.ts`, leave the rest alone.
+
+---
+
+## Tuning typography
+
+The base font family, weights, and `button` overrides live in `defaults/options.ts → typography`. The base font size is in `src/app/settings.ts` (`baseFontSize: 13`).
+
+To swap the typeface:
+
+1. Install a font package (Coreola uses `@fontsource/*`).
+2. Import it once at the app root.
+3. Update `typography.fontFamily` in `options.ts` to put your font first.
+
+The full type-scale story is in [Typography](/design-system/typography).
+
+---
+
+## Tuning spacing and shape
+
+- **Spacing unit** — `options.ts → spacing` (default `4`). Bumping this to `8` is a one-line change that doubles every gap in the app. Do not do that lightly; the rest of the design assumes `4`.
+- **Corner radii** — `options.ts → shape` (`borderRadius`, `borderRadiusMedium`, `borderRadiusLarge`).
+- **Breakpoints** — `options.ts → breakpoints.values`. Coreola uses MUI defaults except `xl: 1440` (down from MUI's 1536).
+
+See [Spacing](/design-system/spacing) for the spacing model in full.
+
+---
+
+## Adding a new theme
+
+To ship a third theme (high-contrast, branded variant, customer-specific):
+
+1. **Create a folder** under `src/themes/` (e.g., `highContrast/`) with `palette.ts`, `components.ts`, `shadows.ts`.
+2. **Register it in `themes.ts`** by composing the same factory used for light/dark.
+3. **Add it to the theme list in `src/app/settings.ts`** (`themes` block) — each theme has an `alias`, `title`, optional `current`, and optional `disabled` fields.
+4. The `ThemeSwitch` UI reads the theme list from the `app` slice and renders it automatically — you do not need to change the switch.
+
+#### Removing a theme
+
+Set `disabled: true` in the theme's entry in `settings.ts`. Selectors filter disabled themes out. The theme files can stay if you might reactivate later.
+
+---
+
+## Per-user vs per-environment themes
+
+Theme is **per-user**. It is stored in the `app` slice (persisted to localStorage), not per-environment. This is by design — admin users on the same product can prefer different modes.
+
+If you need a per-environment theme (a customer-specific build), branch at the factory:
+
+```ts
+// themes.ts
+const brand = process.env.VITE_APP_BRAND ?? 'default';
+export const themes = brand === 'acme' ? acmeThemes : defaultThemes;
+```
+
+Then set `VITE_APP_BRAND` in `.env.local` (see [Environment](/getting-started/environment)).
+
+---
+
+## Using the theme inside components
+
+Three preferred patterns:
+
+#### `sx` with palette tokens
+
+```tsx
+<Box sx={{ color: 'text.secondary', borderColor: 'border.light', p: 2 }} />
+```
+
+The cleanest. The token strings resolve against the active theme.
+
+#### `useTheme()` for dynamic values
+
+```tsx
+import { useTheme } from '@mui/material/styles';
+
+const theme = useTheme();
+const chartFill = theme.palette.color.chart[400];
+```
+
+When you need a specific scale step or pass a value to a non-MUI library (charts).
+
+#### `styled()` with the theme callback
+
+```ts
+const Wrap = styled('div')(({ theme }) => ({
+  padding: theme.spacing(3),
+  background: theme.palette.background.paper,
+}));
+```
+
+For component-level styles that compose multiple tokens.
+
+#### Forbidden — raw values
+
+```tsx
+sx={{ color: '#693F83' }}  // ❌
+```
+
+Raw colors do not respond to theme switches and break dark mode.
+
+---
+
+## Theme type augmentation
+
+`src/themes/interface.ts` extends MUI's `Theme` and `Palette` interfaces with Coreola-specific fields (`palette.color.chart`, `shape.borderRadiusMedium`, etc.). This is how TypeScript knows about the custom tokens.
+
+If you add a new field to the palette or shape, **also extend the interface** so the types stay aligned. Without this, `theme.shape.myNew` is a type error even when it works at runtime.
+
+---
+
+## Anti-patterns
+
+- **Per-component theme overrides scattered in component files.** Put overrides in `defaults/options.ts` (or mode-specific `components.ts`). One source of truth.
+- **Raw hex colors in component code.** Always go through the palette.
+- **Changing `baseFontSize` without auditing.** The component overrides in `options.ts` assume 13. A change here may require adjusting padding constants.
+- **A new theme that is 90% the same as light.** Use `disabled: false` toggles, not a near-duplicate theme.
+- **Forgetting to extend `interface.ts`** when adding palette/shape fields. Compiler errors will follow.
+
+---
+
+## Next steps
+
+- [Colors](/design-system/colors) — palette and color roles
+- [Typography](/design-system/typography) — type scale
+- [Spacing](/design-system/spacing) — spacing grid + breakpoints + shape
+- [State Management](/development/state-management) — how `setCurrentTheme` lives in the `app` slice

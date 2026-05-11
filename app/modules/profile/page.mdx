@@ -1,0 +1,182 @@
+# Profile
+
+The profile module is the per-user surface — the place where the signed-in user edits their own identity. Three sub-pages cover the three things that change over a user's lifetime:
+
+- **Name and Email** — display identity
+- **Photo** — avatar with crop
+- **Password** — change credentials
+
+- Source: `src/features/user/profile/`
+- API: `src/api/users/`, `src/api/auth/`
+- Routes: `/user/profile/name-and-email`, `/user/profile/photo`, `/user/profile/password`
+
+The whole area sits under the user menu in the dashboard header.
+
+---
+
+## Layout
+
+`Profile.tsx` is a section root (`VerticalTabs + Outlet`) — same pattern as Accounts and Settings. The three sub-pages are sibling tabs.
+
+There is no top-level "profile overview" page. The user lands on `Name and Email` by default via the parent route's index redirect.
+
+---
+
+## Name and Email
+
+#### Route
+
+`/user/profile/name-and-email`
+
+#### Model hook
+
+`useNameAndEmailViewModel` responsibilities:
+
+- Yup schema: `first_name` and `last_name` required; `email` is **read-only** in the UI (email changes typically need verification flows the mock does not implement).
+- Edit toggle, cancel, submit handlers.
+- Calls `useUpdateUserMutation` from `src/api/users/users.api` on submit.
+- Dispatches `setUserInfo` to update the `user` slice on success (so the header avatar and name refresh immediately).
+- Maps server errors per-field via `useFieldsFromError`.
+
+#### API
+
+`PUT /users/:id` with `{ first_name, last_name }`. The response updates the slice and the UI re-renders.
+
+#### Why email is read-only
+
+Changing an email address is a flow, not a field edit. A real implementation needs:
+
+- A verification email to the new address.
+- A grace window where both addresses work.
+- An audit log of the change.
+
+The mock backend does not model any of this. In production you would route the email change through a dedicated endpoint and dialog, separate from the name edit.
+
+---
+
+## Photo
+
+#### Route
+
+`/user/profile/photo`
+
+#### Model hook
+
+`usePhotoViewModel` responsibilities:
+
+- File pick via `react-dropzone` (`getRootProps`, `getInputProps`, `isDragActive`).
+- Crop via `useAvatarEditor` (which wraps `react-easy-crop`): `crop`, `zoom`, `rotation`, `onCropComplete`.
+- Two-step upload flow on save:
+  1. `useUploadAvatarMutation({ base64, fileName })` → returns `{ path }`.
+  2. `useUpdateUserMutation({ id, avatar: path })` → updates the user record.
+- On success, dispatches `setUserInfo` so the header avatar refreshes.
+
+#### Components
+
+- **`EditImage`** — the crop UI surface (`src/components/editImage/`).
+- **`AvatarCard`** — the display mode showing the current photo.
+
+#### File flow
+
+```
+User picks file
+   ↓
+react-dropzone reads it as a base64 data URL
+   ↓
+react-easy-crop produces a cropped/rotated canvas
+   ↓
+canvas → base64 → POST /upload-avatar → { path }
+   ↓
+PUT /users/:id with { avatar: path }
+   ↓
+setUserInfo dispatches → header re-renders
+```
+
+The two-step split matters: uploading the image and updating the user are separate concerns and may be authorized differently in production.
+
+---
+
+## Password
+
+#### Route
+
+`/user/profile/password`
+
+#### Model hook
+
+`usePasswordViewModel` responsibilities:
+
+- Yup schema with three fields:
+  - `passwordOld` — current password (required)
+  - `password` — new password (required, min 4, must differ from `passwordOld`)
+  - `passwordRepeat` — must match `password`
+- Show/hide toggles per field.
+- Calls `useUpdateUserMutation` (from `src/api/auth/auth.api`) on submit.
+
+#### API
+
+`PUT /users/:id` with `{ email, password, id }`. In a real backend this would be a dedicated `change-password` endpoint that verifies `passwordOld` server-side — the mock simply accepts the new password.
+
+> **Note:** the helper text on the form notes that old-password verification is mocked. When wiring a real backend, ensure the endpoint enforces it.
+
+#### `PasswordStrength`
+
+The new password field is paired with the `PasswordStrength` component (powered by `zxcvbn`). The strength score updates as the user types and visually reinforces the schema's "min 4" rule with a qualitative bar.
+
+---
+
+## Notifications affordance
+
+The `/user` route group also includes a notifications entry (the bell icon area, shared with the dashboard layout). It is **navigation-only**, not a separate page — clicking the entry opens the notifications drawer wherever the user currently is.
+
+See [Notifications](/ui-patterns/notifications) for the drawer wiring.
+
+---
+
+## Logout
+
+`/user/logout` is the third entry under `/user`. It is a redirect-only route that dispatches the `logout` action from `user.slice` (see [Auth → Logout](/modules/auth)).
+
+---
+
+## How profile changes propagate
+
+All three flows end with the same step: `setUserInfo` (or `setUser`) dispatched to the `user` slice. Components that show the current user — the header avatar, the welcome line, the user menu — subscribe to that slice and re-render automatically.
+
+This is why profile is a sub-area of `/user/` and not under `/application/`: it edits the **signed-in user's own record**, not other users'. Editing another user lives in [Accounts](/modules/accounts).
+
+---
+
+## Permissions
+
+No special abilities are required — every authenticated user can edit their own profile. The mutations on the backend should verify that the `:id` in the URL matches the signed-in user (the mock does not enforce this).
+
+---
+
+## Forking the profile module
+
+If your product needs different profile fields (phone, address, preferences):
+
+1. Add the fields to `UserType` in `src/api/users/users.types.ts`.
+2. Either extend `nameAndEmail` if the new fields are display identity, or add a new sub-page tab if they are a separate concern.
+3. Update the yup schema and the form view.
+4. Adjust the `PUT /users/:id` payload — RTK Query mutations transparently send the new fields.
+
+The two-step upload flow for photo is a good template for any "user uploads a file and we save a reference" pattern (CV upload, signature upload, etc.).
+
+---
+
+## Anti-patterns
+
+- **Editing the current user from `/application/accounts/users`.** That page is for editing **other** users. Self-edit goes through the profile module so the dispatching pattern is consistent.
+- **Calling `setUserInfo` without refetching the user.** The dispatch updates the slice; if your mutation does not return the full user record, the slice will diverge from the server. Always either return the full record or refetch.
+- **One huge "edit profile" page.** Coreola splits it into three sub-pages on purpose — each form has its own concerns and submission semantics.
+- **Storing the avatar URL with the cropped image baked in.** Coreola stores the path returned by `/upload-avatar` and renders the avatar from that path so the crop is reversible if needed later.
+
+---
+
+## Next steps
+
+- [Auth](/modules/auth) — the sign-in flow that populates the slice
+- [Accounts](/modules/accounts) — the admin surface for editing **other** users
+- [Notifications](/ui-patterns/notifications) — the drawer reachable from the `/user` menu

@@ -1,0 +1,211 @@
+# State Management
+
+Coreola uses **Redux Toolkit** as the single source of truth for application state, with **RTK Query** layered on top for server data. There is one store, three hand-written slices, fifteen API slices, and a careful persistence strategy.
+
+- Source: `src/app/store.ts`, `src/app/reducers.ts`, `src/slices/`, `src/api/`
+- Library: `@reduxjs/toolkit` 2.x
+
+---
+
+## The store
+
+A single Redux store wires all reducers and all RTK Query middlewares (`src/app/store.ts`). Two things to note:
+
+1. **`persist/PERSIST` is ignored** by the serializability check — `redux-persist` rehydration involves non-serializable values during the action.
+2. **Every RTK Query slice's middleware is concatenated**. Adding a new API slice requires adding its middleware here.
+
+---
+
+## Three kinds of state
+
+#### Hand-written slices (`src/slices/`)
+
+For state that does not come from the server.
+
+| Slice         | Responsibility                                                                         |
+|---------------|----------------------------------------------------------------------------------------|
+| `app`         | Theme, language, sidebar open/collapsed, active-requests counter, notifications drawer state |
+| `breadcrumbs` | The breadcrumb stack rendered by the dashboard layout                                  |
+| `user`        | Current user, access token, abilities — populated by sign-in                           |
+
+The `app` slice carries the cross-cutting UI state — anything that more than one feature reads. Selectors are exported from `app.slice.ts` (e.g., `getCurrentLanguage`, `getCurrentTheme`, `getSidebarOpen`, `getNotificationsOpen`, `getActiveRequestsCount`).
+
+#### RTK Query slices (`src/api/`)
+
+One slice per backend resource. Each owns its endpoints, generated hooks, and a cache scoped by tag.
+
+15 slices ship in the box:
+
+```
+abilities, assessments, auth, customers, dashboard, features,
+meta, notifications, recipients, roles, search, segments,
+tableColumns, users, usersInfo
+```
+
+Each slice exposes both raw hooks (`useGetAssessmentsQuery`) and `Mapped` variants that normalize the server shape into UI-friendly types.
+
+#### Local component state
+
+`useState` is fine — but the rule is **local state for local concerns**. If two components need to react to the same change, it goes to Redux (or the URL via `useSearchParams`).
+
+---
+
+## Persistence
+
+`redux-persist` is configured in `src/app/reducers.ts` with two nested configs:
+
+- **Root persist config** — `whitelist: ['user']`. The `user` slice (auth token, profile, abilities) survives reloads.
+- **Nested `app` persist config** — `blacklist: ['activeRequestsCount']`. The `app` slice persists theme, language, sidebar mode, collapsed menu groups — everything except the transient request counter.
+
+What this means:
+
+- **`user`** — persisted.
+- **`app`** — persisted (minus `activeRequestsCount`).
+- **`breadcrumbs`** — in-memory, rebuilt on navigation.
+- **API caches** — in-memory, refetched on next load.
+
+Storage is browser `localStorage` (the redux-persist default).
+
+#### Logout
+
+The custom `rootReducer` (`reducers.ts`) intercepts the `logout` action: it wipes `persist:root` from storage and re-initializes every reducer **except** the `app` slice. Theme and language survive — re-signing in does not feel like a fresh session.
+
+---
+
+## The `app` slice in detail
+
+`src/slices/app/app.slice.ts` is the most accessed slice. Key actions:
+
+| Action                          | Effect                                                       |
+|---------------------------------|--------------------------------------------------------------|
+| `setCurrentLanguage`            | Switch active locale (`en` / `uk`)                           |
+| `setCurrentTheme`               | Switch active theme (`light` / `dark`)                       |
+| `setSidebarOpen`                | Open/close the sidebar                                       |
+| `setSidebarForceOpen`           | Pin the sidebar open even on small screens                   |
+| `setCollapsedMenu`              | Collapse/expand a sidebar group                              |
+| `setNotificationsOpen`          | Open/close the notifications drawer                          |
+| `incrementActiveRequestsCount`  | Bump the in-flight request counter (called by `baseQuery`)   |
+| `decrementActiveRequestsCount`  | Decrement after a request resolves                           |
+| `setInitialDataLoaded`          | Signal that startup data fetching is done                    |
+| `setInspectTranslations`        | Toggle a debug mode showing i18n keys                        |
+
+Selectors are pure and memoized with `createSelector`. Always prefer them over reading `state.app` directly — components subscribe to the smallest possible slice.
+
+---
+
+## The `user` slice
+
+`src/slices/user/user.slice.ts` holds the signed-in user. Key fields:
+
+- `accessToken` — bearer token; read by `baseQuery` (`src/helpers/baseQuery.ts`).
+- `user` — the `User` record (name, email, avatar, roles, abilities).
+- `checkTime` — timestamp of the last token validity check; updated on `setCheckTime` (dispatched on 401 responses).
+
+Key actions: `setUser`, `setUserToken`, `setUserInfo`, `setCheckTime`, `logout`.
+
+The user slice is intentionally small — it carries identity, not domain data. Anything else (assigned assessments, preferences, etc.) lives in RTK Query caches or other slices.
+
+---
+
+## RTK Query patterns
+
+Each API slice follows the same shape (e.g., `src/api/assessments/assessments.api.ts`):
+
+```
+createApi({
+  reducerPath: 'assessmentsApi',
+  baseQuery: getBaseQuery('/assessments', 'MOCKUP_API'),
+  tagTypes: ['Assessment', 'Findings', 'Evidence'],
+  endpoints: (builder) => ({
+    getAssessments:   builder.query(...),
+    getAssessment:    builder.query(...),
+    updateAssessment: builder.mutation(...),
+  }),
+})
+```
+
+A companion `<resource>.hooks.ts` exposes the `Mapped` variants — these wrap the generated hooks and normalize the server shape into a UI-friendly type. View code talks to `Mapped` hooks; the raw ones are reserved for cases where the unmapped shape is what you want.
+
+#### Tag invalidation
+
+Tags are the cache-coherence mechanism. A mutation declares which tags it invalidates; queries declare which tags they provide. When a mutation runs, RTK Query refetches queries that overlap.
+
+The pattern: tag per resource + tag per id. List queries provide `{ type: 'Assessment' }` plus one tag per row; detail queries provide `{ type: 'Assessment', id }`. A mutation on a single assessment invalidates only that id; a bulk operation can invalidate the type.
+
+---
+
+## Polling
+
+Long-running screens (dashboards, queues) can opt into polling:
+
+```
+useGetApplicationDashboardQuery(undefined, { pollInterval: 60_000 });
+```
+
+The polling interval is per-component, not global. Dashboards poll at 60 seconds; one-shot pages do not poll at all.
+
+---
+
+## When to use a hand-written slice vs RTK Query
+
+Use **RTK Query** when:
+
+- The data has a server source.
+- It needs caching, deduplication, or polling.
+- It mutates through HTTP.
+
+Use a **hand-written slice** when:
+
+- The state is purely client-side.
+- It needs to be cross-component (UI mode, selection, drawer state).
+- It needs persistence beyond a single component lifetime.
+
+Use **`useState`** when:
+
+- It's local to one component.
+- It doesn't survive unmount.
+- It doesn't need to be in DevTools.
+
+Most decisions are obvious. The tricky case is "I want to keep a small UI flag across navigation" — that's a slice, not URL state, not `useState`.
+
+---
+
+## Devtools
+
+`devTools: process.env.NODE_ENV !== 'production'` enables Redux DevTools in dev. RTK Query actions show up there too, prefixed with `<sliceName>/<endpointName>/...`. Use this to trace cache state, see when refetches fire, and inspect persisted state on reload.
+
+---
+
+## Adding a new slice
+
+#### Hand-written
+
+1. Create `src/slices/<name>/<name>.slice.ts` with `createSlice`.
+2. Create `<name>.types.ts` for the state shape.
+3. Register the reducer in `src/app/reducers.ts` inside `combineReducers`.
+4. If it needs persistence, add it to the root `whitelist` (or wrap in a nested `persistReducer`).
+
+#### RTK Query
+
+1. Create `src/api/<resource>/<resource>.api.ts` with `createApi` and `getBaseQuery`.
+2. Add `<resource>.hooks.ts` for `Mapped` variants and other helpers.
+3. Add `<resource>.types.ts`.
+4. Register `<resource>Api.reducer` in `combineReducers` and `<resource>Api.middleware` in the `configureStore` middleware array.
+
+---
+
+## Anti-patterns
+
+- **Two slices owning the same data.** Pick one; selectors are cheap.
+- **Calling RTK Query hooks inside a view component.** They belong in the model hook.
+- **Reaching into `state.api.<endpoint>.data` directly.** Use the generated hooks.
+- **Persisting RTK Query caches.** Don't — they refetch fast and the persisted snapshot rots.
+- **Local component state for "selected row" used by multiple components.** Lift to a slice or to the URL.
+
+---
+
+## Next steps
+
+- [API Layer](/development/api-layer) — `baseQuery`, error handling, and how `MOCKUP_API` vs `SYSTEM_API` work
+- [Routing](/development/routing) — how `user` slice abilities drive route filtering
+- [Mock Backend](/development/mock-backend) — where the RTK Query data actually comes from in dev

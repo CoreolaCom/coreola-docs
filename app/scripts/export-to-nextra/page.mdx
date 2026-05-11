@@ -1,0 +1,41 @@
+# `export-to-nextra.js`
+
+Exports the in-app MDX documentation into a Nextra 3 `pages/` tree for publishing as a stand-alone static site.
+
+#### What it does
+
+1. Reads `src/app/routes.ts`, locates the `/documentation` route, and parses its `children` array to build the docs tree.
+2. For each child route, reads the corresponding MDX file under `src/features/documentation/<section>/<page>/locales/<locale>/<Page>.mdx`.
+3. Strips the in-app setext header block (the `Title\n---` breadcrumb used by `MDXDoc`).
+4. Rewrites internal links from `/documentation/x/y` to `/x/y` so they work in Nextra's URL space.
+5. Removes `` placeholder comments.
+6. Writes the transformed MDX to `nextra/pages/<section>/<page>/page.mdx`.
+7. Emits `_meta.js` files at each level so Nextra's sidebar order matches the in-app navigation.
+
+#### Run
+
+```bash
+# Default (English)
+node scripts/export-to-nextra.js
+
+# Ukrainian
+LOCALE=uk node scripts/export-to-nextra.js
+
+# Keep the existing nextra/ folder (incremental update)
+CLEAN=0 node scripts/export-to-nextra.js
+```
+
+Output lives in `nextra/pages/`.
+
+#### When to use
+
+- After editing in-app docs and before pushing the changes to the public docs site.
+- After adding a new section/page to the documentation tree in `routes.ts` — the script will pick it up automatically.
+
+#### Design notes
+
+- The TREE is **derived**, not hard-coded. To add a new doc page, edit `routes.ts` and create the MDX file — the script needs no changes.
+- `importUrl` is the source of truth: the camelCase folder segment in `features/documentation/<sectionSrc>/<pageSrc>/<PascalName>` becomes the source location the script reads from.
+- The script uses `new Function('return ...')` to evaluate the documentation route's children array as a JS literal. This is safe because that block contains no icon refs or function calls — just plain object literals.
+
+- Source: `scripts/export-to-nextra.js`

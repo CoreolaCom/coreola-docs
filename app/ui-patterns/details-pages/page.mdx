@@ -1,0 +1,217 @@
+# Details Pages
+
+The details page is the most common screen shape in Coreola after the catalog (list) page. It shows one record's full state, lets the user edit it inline, and surfaces secondary resources (findings, evidence, activity) in supporting cards.
+
+The canonical implementation is `src/features/collections/assessments/details/Details.tsx`. Use it as a template.
+
+---
+
+## The shape
+
+A details page is a **stack of cards** wrapped in a layout shell.
+
+```
+┌────────────────────────────────────────────────────────┐
+│ Breadcrumbs  /  Title                                  │
+├────────────────────────────────────────────────────────┤
+│ ┌────────────────────────────────────────────────────┐ │
+│ │ OverviewCard  (key, status, owner, dates, key/value│ │
+│ └────────────────────────────────────────────────────┘ │
+│ ┌────────────────────────────────────────────────────┐ │
+│ │ DecisionCard  (workflow controls)                  │ │
+│ └────────────────────────────────────────────────────┘ │
+│ ┌────────────────────────────────────────────────────┐ │
+│ │ FindingsCard  (sub-resource table + actions)       │ │
+│ └────────────────────────────────────────────────────┘ │
+│ ┌────────────────────────────────────────────────────┐ │
+│ │ EvidenceCard  (sub-resource table + actions)       │ │
+│ └────────────────────────────────────────────────────┘ │
+│ ┌────────────────────────────────────────────────────┐ │
+│ │ ActivityCard  (timeline)                           │ │
+│ └────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────┘
+```
+
+Every card is a separate view component. The page composes them.
+
+---
+
+## MVVM in practice
+
+Details pages are where MVVM pays off the most. There are many data sources, many dialogs, and many actions — without a single model hook the page becomes a wiring nightmare.
+
+#### The page (View)
+
+`Details.tsx` calls one model hook and renders cards:
+
+```tsx
+export default function Details() {
+  const {
+    assessment,
+    dialogs,
+    selectedEvidence,
+    selectedFinding,
+    closeDialog,
+    openDialog,
+    loading,
+    onExited,
+    onFindingExited,
+  } = useDetailsModel();
+
+  return (
+    <Stack spacing={3}>
+      <OverviewCardView assessment={assessment} onEdit={openDialog.editAssessment} />
+      <DecisionCardView ... />
+      <FindingsCardView ... />
+      <EvidenceCardView ... />
+      <ActivityCardView ... />
+
+      {dialogs.editAssessmentOpen && <OverviewCardEditModeView ... onClose={closeDialog} />}
+      {dialogs.newFindingOpen && <NewFindingDialogView ... />}
+      {dialogs.requestEvidenceOpen && <RequestEvidenceDialogView ... />}
+      {/* etc. */}
+    </Stack>
+  );
+}
+```
+
+The page owns nothing. It dispatches handlers and renders state.
+
+#### The model hook
+
+`useDetailsModel.ts` is the brain:
+
+- Fetches the primary record (`useGetAssessmentQuery`) and any side resources (`useGetFindingsQuery`, `useGetEvidenceQuery`, `useGetActivityQuery`).
+- Tracks dialog open/close state as a single `dialogs` object.
+- Tracks selection state for inline operations (`selectedEvidence`, `selectedFinding`).
+- Exposes `openDialog.*` and `closeDialog` helpers.
+- Composes secondary hooks: `useCreateFinding`, `useEditAssessment`, `useEvidenceRequest`, `useAssignFindingOwner`, `useUpdateEvidenceStatus`, `useUpdateFindingStatus`.
+
+The secondary hooks each handle one specific concern (one form, one mutation). They are also under `details/hooks/`. The model hook composes them — it does not duplicate their logic.
+
+---
+
+## Card composition
+
+Each card is its own component under `details/views/`. They follow a strict contract:
+
+- **Pure presentation.** No `useState`, no `useDispatch`, no fetching. They receive data and callbacks as props.
+- **Single responsibility.** `FindingsCardView` does not know about evidence. `EvidenceCardView` does not know about findings.
+- **Card chrome via `Card`.** The `Card` component provides header, padding, divider; the view fills the content area.
+
+When a card has an "edit mode", it is a separate view (e.g., `OverviewCardEditModeView`) toggled by the model hook. Mode-switching logic lives in the model, not the view.
+
+---
+
+## Dialogs
+
+Dialogs that mutate sub-resources (create a finding, request evidence, change a status, assign an owner) are dedicated views under `details/views/`:
+
+- `NewFindingDialogView`
+- `RequestEvidenceDialogView`
+- `AssignFindingOwnerDialogView`
+- `ChangeFindingStatusDialogView`
+- `ChangeEvidenceStatusDialogView`
+
+The model hook controls `dialogs.<name>Open` flags. The dialogs are conditionally rendered in `Details.tsx`. On submit, the dialog calls a handler exposed by the model hook (e.g., `onCreateFinding(values)`), which calls the secondary hook (`useCreateFinding`), which calls the RTK Query mutation.
+
+Each dialog owns its own form via react-hook-form — see [Forms](/ui-patterns/forms).
+
+---
+
+## Inline edit pattern
+
+For single-field edits (name, description, category), prefer **inline editing** over a dialog. Use `EditableField`:
+
+```tsx
+<EditableField
+  value={assessment.title}
+  onSave={(next) => updateAssessment({ id, title: next })}
+/>
+```
+
+For multi-field edits (the whole "overview"), use a card that swaps between view mode (`OverviewCardView`) and edit mode (`OverviewCardEditModeView`). This is friendlier than a dialog because the user stays anchored on the page.
+
+---
+
+## Breadcrumbs
+
+Detail pages should always set the breadcrumb segment to the record's identifier:
+
+```ts
+useBreadcrumbSectionTitle({ title: assessment?.key });
+```
+
+`useBreadcrumbSectionTitle` pushes/pops the title into the `breadcrumbs` slice. Rendering happens automatically in the dashboard layout's `Breadcrumbs` component.
+
+---
+
+## URL params for sub-resources
+
+The assessments detail route is:
+
+```
+/collections/assessments/details/:assessmentId?/:resource?/:resourceId?
+```
+
+`resource` is constrained to `'finding' | 'evidence'` (declared in `routes.ts` as `values`). This means a deep link to a specific finding looks like:
+
+```
+/collections/assessments/details/123/finding/456
+```
+
+The model hook reads these params via `useParams` and surfaces them as `selectedFinding`, `selectedEvidence`. Sub-resource dialogs read from the same source. The pattern lets you deep-link, refresh, and share — same as tables.
+
+---
+
+## Loading
+
+The details page must handle three loading states cleanly:
+
+1. **Initial load.** Render skeleton cards in the same shape as the real cards. Use `Card`'s `loading` prop or wrap content in `Skeleton`.
+2. **Mutation in flight.** Each card with a mutating action shows a per-action loading state (button spinner) — never block the whole page.
+3. **Sub-resource loading.** Side panels fetch independently. They each show their own skeleton or empty state.
+
+---
+
+## Error states
+
+If the primary resource fails to load (e.g., 404, 403), render a contextual `EmptyState` in place of the cards with a back link. Do not show empty cards.
+
+If a side resource fails, show an inline error inside that card only. The rest of the page still works.
+
+---
+
+## When to add a new card vs a new page
+
+A new card on the existing details page is the right call when:
+
+- It is a side resource of the primary record.
+- It is meaningful to see alongside the main content.
+- It would fit in a single MUI Card surface.
+
+A new page is the right call when:
+
+- The concept needs its own URL.
+- It has its own list and details flow.
+- Embedding it on the existing page would push the visible cards below a second scroll.
+
+When in doubt, start with a card and split it out later if the page becomes unwieldy.
+
+---
+
+## Anti-patterns
+
+- **One mega view** containing all the page logic. Use the cards-and-model-hook split — even for "small" pages, the structure stays clean.
+- **Cards that fetch their own data.** Data lives in the model hook; cards take it as props.
+- **Dialog state inside view components.** Dialog `open` flags belong in the model hook so multiple cards can coordinate.
+- **Hardcoded card spacing.** Use `<Stack spacing={3}>` around the cards; the layout decides the gap.
+
+---
+
+## Next steps
+
+- [Forms](/ui-patterns/forms) — how dialogs and inline edits use react-hook-form
+- [Tables](/ui-patterns/tables) — for the sub-resource tables inside cards
+- [Architecture](/overview/architecture) — the MVVM rules in full
+- [Adding a New Module](/customization/adding-new-module) — using these patterns for a fresh feature

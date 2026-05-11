@@ -1,0 +1,394 @@
+# Components
+
+Coreola exposes around 40 reusable components in `src/components/` plus two showcase areas in `src/features/coreComponents/` and `src/features/muiComponents/`. This page is a guided inventory — what each component is for, where it lives, and where to see it live.
+
+For deep dives on each component (props, examples, edge cases), open the corresponding showcase route in the running app.
+
+---
+
+## Where to find them
+
+Two locations matter:
+
+- **`src/components/`** — the actual reusable components. Import them from `components/<componentName>/<ComponentName>`.
+- **`src/features/coreComponents/` and `src/features/muiComponents/`** — showcase pages that document each component. Browse them at `/core-components/*` and `/mui-components/*` in the running app.
+
+Storybook is an optional developer sandbox, not the current canonical component surface. The scripts are reserved in `package.json`, but Storybook must be initialized before `npm run storybook` can run. See [Storybook](/development/storybook).
+
+---
+
+## Core components — by category
+
+### Data display
+
+#### `Table`
+
+The production-grade data table. Server-side pagination, sort, filter, search; column visibility / reorder / resize; URL state; CSV export; row selection; sticky headers; expandable rows.
+
+- Source: `src/components/table/`
+- Showcase: `/core-components/data-display/table`
+- Deep dive: [Tables](/ui-patterns/tables)
+
+#### `DataList`
+
+Vertical list of records with built-in loading and empty states. Use when a table is overkill or when the data is inherently hierarchical.
+
+- Source: `src/components/dataList/`
+- Showcase: `/core-components/data-display/data-list`
+
+#### `KpiCard`
+
+The metric card used on dashboards. Shows a value, optional trend, and a label.
+
+- Source: `src/components/kpiCard/`
+- Showcase: `/core-components/data-display/kpi-card`
+
+#### `StatsLine`
+
+A compact inline metric (label + value), used for secondary metrics within cards.
+
+- Source: `src/components/statsLine/`
+- Showcase: `/core-components/data-display/stats-line`
+
+#### `Status`
+
+A pill that renders a status with theme-aware coloring. Pairs with the `lifecycle.status` API value.
+
+- Source: `src/components/status/`
+- Showcase: `/core-components/data-display/status`
+
+#### `Priority`
+
+Priority indicator (critical / high / medium / low) using the custom priority glyphs.
+
+- Source: `src/components/priority/`
+- Showcase: `/core-components/data-display/priority`
+
+#### `Risk`
+
+Risk-level indicator. Visually similar to `Priority` but semantically distinct.
+
+- Source: `src/components/risk/`
+
+#### `Point`
+
+A small dot used as an inline status marker — for unread state, presence, etc.
+
+- Source: `src/components/point/`
+- Showcase: `/core-components/data-display/point`
+
+#### `UserBadge`
+
+Avatar + name + optional secondary line. The canonical "this is a user" inline element.
+
+- Source: `src/components/userBadge/`
+- Showcase: `/core-components/data-display/user-badge`
+
+#### `HighlightWords`
+
+Inline-highlights matching substrings inside a string. Used by search results and filter UIs.
+
+- Source: `src/components/highlightWords/`
+- Showcase: `/core-components/data-display/highlight-words`
+
+#### `TextOverflow`
+
+Wraps long text with truncation and a tooltip showing the full content.
+
+- Source: `src/components/textOverflow/`
+- Showcase: `/core-components/data-display/text-overflow`
+
+---
+
+### Inputs
+
+#### `EditableField`
+
+Inline-editable text. Click to enter edit mode, blur or Enter to save, Esc to cancel. Used heavily on detail pages.
+
+- Source: `src/components/editableField/`
+- Showcase: `/core-components/inputs/editable-field`
+
+#### `EditImage`
+
+Upload + crop image control. Powers the user avatar flow.
+
+- Source: `src/components/editImage/`
+- Showcase: `/core-components/inputs/edit-image`
+
+#### `PhoneInput`
+
+Phone number input with country flag, dial-code prefix, and per-country mask.
+
+- Source: `src/components/phoneInput/`
+- Showcase: `/core-components/inputs/phone-input`
+
+#### `SearchInput`
+
+The standard search field — magnifier icon, clear button, debounced change event.
+
+- Source: `src/components/searchInput/`
+- Showcase: `/core-components/inputs/search-input`
+
+#### `ToggleInput`
+
+Three-state toggle (on / off / indeterminate) used for opt-in features and table column visibility.
+
+- Source: `src/components/toggleInput/`
+
+#### `DatePicker`
+
+Wrapper around `@mui/x-date-pickers` with Coreola theming and a consistent prop shape.
+
+- Source: `src/components/datePicker/`
+
+#### `TextField`
+
+Coreola's wrapping `TextField` that ensures consistent helper-text and error-icon behavior. Use this in preference to MUI's raw `TextField`.
+
+- Source: `src/components/textField/`
+
+---
+
+### Feedback & states
+
+#### `ConfirmDialog`
+
+The destructive-action confirmation dialog. Title, description, cancel/confirm buttons, with `loading` and `severity` props.
+
+- Source: `src/components/confirmDialog/`
+- Showcase: `/core-components/feedback-states/confirm-dialog`
+
+#### `EmptyState`
+
+Centered illustration + heading + body + optional CTA. Used wherever a list, table, or card has no data.
+
+- Source: `src/components/emptyState/`
+- Showcase: `/core-components/feedback-states/empty-state`
+
+#### `ErrorBoundary`
+
+Catches uncaught render errors in a sub-tree. Used at the root and around critical sections.
+
+- Source: `src/components/errorBoundary/`
+- Showcase: `/core-components/feedback-states/error-boundary`
+
+#### `LinearProgress`
+
+Thin horizontal progress indicator for component-local loading surfaces such as cards and dialogs. The active-request counter is available in the `app` slice, but the default dashboard layout does not render a global progress bar.
+
+- Source: `src/components/linearProgress/`
+- Showcase: `/core-components/feedback-states/linear-progress`
+
+#### `PasswordStrength`
+
+Visual strength meter backed by `zxcvbn`. Used in sign-up and password-change flows.
+
+- Source: `src/components/passwordStrength/`
+- Showcase: `/core-components/feedback-states/password-strength`
+
+#### `Skeleton`
+
+Placeholder rectangles that approximate the shape of incoming content. Always prefer a skeleton over a center-screen spinner for content-area loading.
+
+- Source: `src/components/skeleton/`
+- Showcase: `/core-components/feedback-states/skeleton`
+
+---
+
+### Layout & navigation
+
+#### `Blank`
+
+A placeholder "this slot has nothing yet" component. Use during scaffolding, never in production.
+
+- Source: `src/components/blank/`
+- Showcase: `/core-components/layout-navigation/blank`
+
+#### `Breadcrumbs`
+
+The breadcrumb component. Driven by the `breadcrumbs` Redux slice — pages push and pop breadcrumb entries via hooks.
+
+- Source: `src/components/breadcrumbs/`
+- Showcase: `/core-components/layout-navigation/breadcrumbs`
+
+#### `Chapter`
+
+A titled section wrapper inside a page or card. Use to group related content with a heading and (optionally) a horizontal rule.
+
+- Source: `src/components/chapter/`
+- Showcase: `/core-components/layout-navigation/chapter`
+
+#### `Menu`
+
+The sidebar navigation menu. Renders from the route tree (filtered by ability + feature flag) via `useGetMenuTree`.
+
+- Source: `src/components/menu/`
+- Showcase: `/core-components/layout-navigation/menu`
+
+#### `Scrollbars`
+
+Wraps a scroll container with `overlayscrollbars` — themed scrollbars that respect light/dark.
+
+- Source: `src/components/scrollbars/`
+- Showcase: `/core-components/layout-navigation/scrollbars`
+
+---
+
+### Popovers
+
+#### `ActionMenu`
+
+The standard "kebab menu" for row actions and contextual menus. Accepts an array of action items with optional separators and disabled states.
+
+- Source: `src/components/actionMenu/`
+- Showcase: `/core-components/popovers/action-menu`
+
+---
+
+### Surfaces
+
+#### `Card`
+
+Coreola's `Card` wrapper. Uses the MUI Card overrides (24px horizontal padding, 12px header bottom border) and adds a `loading` prop that renders a skeleton in place of content.
+
+- Source: `src/components/card/`
+- Showcase: `/core-components/surfaces/card`
+
+#### `AvatarCard`
+
+A `Card` variant with an avatar slot. Used by user/profile cards across the app.
+
+- Source: `src/components/avatarCard/`
+- Showcase: `/core-components/surfaces/avatar-card`
+
+#### `DetailsDialog`
+
+A modal styled to match the detail-page card system. Use for actions that need a focused workspace but do not warrant a full page.
+
+- Source: `src/components/detailsDialog/`
+- Showcase: `/core-components/surfaces/details-dialog`
+
+---
+
+### Documentation
+
+#### `MdxDoc`
+
+Renders an MDX module with theme-aware styling. The component you are looking at right now.
+
+- Source: `src/components/mdxDoc/`
+- Showcase: `/core-components/documentation/mdx-doc`
+
+#### `MdxDocAnchors`
+
+Companion to `MdxDoc` that collects h2–h4 headings into the on-this-page sidebar.
+
+- Source: `src/components/mdxDoc/MDXDocAnchors.tsx`
+- Showcase: bundled in the MdxDoc showcase
+
+#### `CodePreview`
+
+Syntax-highlighted code block via `shiki`. Used inside docs and in component showcases.
+
+- Source: `src/components/codePreview/`
+- Showcase: `/core-components/documentation/code-preview`
+
+#### `InlineCode`
+
+Inline code styling that respects the active theme. Pairs with prose inside MDX.
+
+- Source: `src/components/inlineCode/`
+- Showcase: `/core-components/documentation/inline-code`
+
+---
+
+### System
+
+#### `PrivateRoute`
+
+Route guard that redirects to `/auth/sign-in` if no valid session is found.
+
+- Source: `src/components/privateRoute/`
+- Showcase: `/core-components/system/private-route`
+
+#### `LanguageSwitch`
+
+Locale picker. Drives the `app` slice and persists the choice.
+
+- Source: `src/components/languageSwitch/`
+- Showcase: `/core-components/system/language-switch`
+
+#### `ThemeSwitch`
+
+Light/dark toggle. Drives the `app` slice and persists.
+
+- Source: `src/components/themeSwitch/`
+- Showcase: `/core-components/system/theme-switch`
+
+#### `SnackbarProvider`
+
+Wraps the app with `notistack`'s provider and registers the global `snackActions` accessor used by `baseQuery`.
+
+- Source: `src/components/snackbarProvider/`
+
+---
+
+## MUI showcase components
+
+These are not Coreola components — they are MUI components with Coreola theme overrides demonstrated in isolation. Useful when you need to remember how a styled MUI primitive looks in the current theme:
+
+- `Alert`, `Button`, `Select`, `TextField` (under `/mui-components/inputs/*`)
+- `Tabs` (under `/mui-components/navigation/tabs`)
+- `Paper` (under `/mui-components/surfaces/paper`)
+
+---
+
+## Choosing the right component
+
+A short decision guide:
+
+| You need...                                 | Reach for                                    |
+|---------------------------------------------|----------------------------------------------|
+| Tabular data with sort/filter/pagination    | `Table`                                      |
+| A simple list of named items                | `DataList`                                   |
+| Metric on a dashboard                       | `KpiCard` (large) or `StatsLine` (inline)    |
+| Status pill                                 | `Status` (lifecycle) / `Priority` / `Risk`   |
+| Confirmation before a destructive action    | `ConfirmDialog`                              |
+| Transient success/error message             | `snackActions.{success,error,info,warning}`  |
+| Field where users can edit in place         | `EditableField`                              |
+| Image with crop                             | `EditImage`                                  |
+| Search field                                | `SearchInput`                                |
+| Empty list / no results                     | `EmptyState`                                 |
+| Loading content shaped like the real thing  | `Skeleton`                                   |
+| Top-of-page request indicator               | `LinearProgress`                             |
+| Sub-section heading inside a card           | `Chapter`                                    |
+| Truncated text with tooltip                 | `TextOverflow`                               |
+| Highlight matches inside a string           | `HighlightWords`                             |
+| Inline user identity                        | `UserBadge`                                  |
+| Row "kebab" actions                         | `ActionMenu`                                 |
+
+---
+
+## Adding a new shared component
+
+If a component genuinely needs to be shared (used in 2+ features and stable enough to warrant abstraction):
+
+1. Scaffold via Plop:
+   ```bash
+   npm run plop
+   # pick `component`, name it, default path src/components
+   ```
+2. Implement against the type-first contract in `<name>.types.ts`.
+3. Add a showcase page under `src/features/coreComponents/<category>/<name>/` (use `component-doc` plop generator) so the component is browsable.
+4. Document props with JSDoc — IDE intellisense reads them.
+
+See [Adding a New Module](/customization/adding-new-module) for the broader feature-vs-component decision rubric.
+
+---
+
+## Next steps
+
+- [Tables](/ui-patterns/tables) — the deep dive on the `Table` component
+- [Forms](/ui-patterns/forms) — `react-hook-form` + yup + the form components
+- [Notifications](/ui-patterns/notifications) — `snackActions` and notistack

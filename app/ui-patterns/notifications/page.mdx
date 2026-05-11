@@ -1,0 +1,168 @@
+# Notifications
+
+Coreola has two distinct notification systems that beginners often confuse:
+
+- **Toasts** — transient snackbars driven by `snackActions` (notistack). For "your action succeeded / failed" feedback.
+- **Notification center** — the bell-icon drawer in the dashboard header. For asynchronous, persistent messages from the system (someone assigned you a finding, evidence was uploaded, etc.).
+
+Both have their place. Use the right one.
+
+---
+
+## Toasts (`snackActions`)
+
+#### What it is
+
+`snackActions` is a global accessor over notistack's `useSnackbar()` hook. It works from anywhere — React components, custom hooks, the RTK Query `baseQuery`, or any imperative code path that needs to flash a message.
+
+Source:
+- `src/helpers/snackBarUtils.ts`
+- `src/components/snackbarProvider/SnackbarProvider.tsx`
+
+#### How it is registered
+
+`SnackbarProvider` wraps the app in `App.tsx`. Inside it, `SnackbarUtilsConfigurator` runs `useSnackbar()` and stashes the result so `snackActions` can call it from non-React contexts. This is what lets `baseQuery` raise an error snackbar without needing to be a hook.
+
+#### The API
+
+```ts
+snackActions.success(msg, options?)
+snackActions.warning(msg, options?)
+snackActions.info(msg, options?)
+snackActions.error(msg, options?)
+snackActions.toast(msg, options?)     // explicit variant via options.variant
+snackActions.closeSnackbar(key)
+```
+
+`options` is passed through to notistack — use it for `persist`, `autoHideDuration`, `action`, custom `variant`, etc. The settings default `maxSnackBars` to 5 (from `src/app/settings.ts`).
+
+#### When to use each variant
+
+| Variant   | Use for                                                    |
+|-----------|------------------------------------------------------------|
+| `success` | A user action completed successfully                       |
+| `error`   | A user action failed — server error, validation, network   |
+| `warning` | Reversible-but-significant action ("Your changes will be lost") |
+| `info`    | Non-action feedback ("Your session was refreshed")         |
+
+`success` and `error` are by far the most common. `warning` and `info` should be rare — if you find yourself using them a lot, the message probably belongs in the UI instead.
+
+#### Usage patterns
+
+In a model hook after a mutation:
+
+```ts
+try {
+  await updateAssessment(values).unwrap();
+  snackActions.success(t('Assessment updated'));
+} catch {
+  // baseQuery already showed the error snackbar
+}
+```
+
+Server errors are surfaced automatically by `baseQuery` (`src/helpers/baseQuery.ts`). You only call `snackActions.error` for client-side situations that the base query cannot detect — for example, a file that fails a local size check.
+
+For an action with an undo affordance, use the `action` option:
+
+```ts
+snackActions.success(t('Item archived'), {
+  action: (key) => (
+    <Button onClick={() => { undoArchive(); snackActions.closeSnackbar(key); }}>
+      {t('Undo')}
+    </Button>
+  ),
+});
+```
+
+#### Anti-patterns
+
+- **Both a per-field error and a toast for the same problem.** Pick one (see [Forms](/ui-patterns/forms)).
+- **Persistent toasts for things that should be in the UI.** A toast lasts seconds; if it has to be read carefully, render it in the page.
+- **A success toast for every keystroke.** Confirm completions, not increments.
+- **Logging via toasts.** Use `console.log` and proper logging — toasts are user-facing.
+- **Hard-coded English strings.** Always wrap in `t()`.
+
+---
+
+## The notification center
+
+#### What it is
+
+The bell-icon drawer in the dashboard header. Backed by the `notifications` API, persisted across sessions. Use for:
+
+- System-generated events ("you were assigned a finding")
+- Asynchronous results ("the export you requested is ready to download")
+- Cross-session messages (something happened while the user was offline)
+
+Source:
+- View: `src/layouts/dashboardLayout/notifications/Notifications.tsx`, `NotificationsView.tsx`
+- API: `src/api/notifications/`
+
+#### How it is wired
+
+The drawer is part of the dashboard layout — it lives in the header and is opened by a bell icon. Open/close state is in the `app` slice (`getNotificationsOpen`, `setNotificationsOpen`).
+
+The list is fetched via `notificationsApi.getNotifications`:
+
+```
+GET /notifications?_sort=created&_order=desc
+```
+
+Mutations expose `addNotification`, `removeNotification`, `updateNotification` — used by the system, not by feature code in most cases.
+
+#### Notification shape
+
+Each notification has at least an `id`, a `title`, a `description`, a `created` timestamp, and a `read` flag. Domain extensions (link, severity, related entity) are added as the system evolves.
+
+#### When to use
+
+- A user-triggered action that **completes asynchronously** (background export, batch operation).
+- A system event the user should know about **on next sign-in**, not just this session.
+- Cross-resource events that do not fit on the resource's own page (assignments, mentions, status changes by another user).
+
+For anything that should be acknowledged **right now**, use a toast. The notification center is for "you can look at this when you want to".
+
+---
+
+## Toast vs notification center — the rule
+
+```
+Did the user do this action themselves, in this session?
+├─ Yes → Toast (snackActions)
+└─ No  → Notification center
+```
+
+The exception is async results of the current user's action — those go to **both**: a toast that says "your export started", and a notification when it finishes.
+
+---
+
+## Settings that affect notifications
+
+From `src/app/settings.ts`:
+
+```ts
+maxSnackBars: 5,
+notificationSeenTimeout: 2000,
+```
+
+- `maxSnackBars` — the stack cap. If a sixth toast fires, the oldest is dropped.
+- `notificationSeenTimeout` — how long a notification in the drawer must be visible before it is marked as read (currently 2s).
+
+If you need to tune these for a different product, do it here — not per call site.
+
+---
+
+## Accessibility
+
+Both systems are screen-reader friendly via notistack's defaults and MUI's `Drawer`. Two things to keep in mind:
+
+- Use **descriptive** toast text. "Saved" is not enough; "Profile updated" is better.
+- Do not rely on toasts for critical information. They time out — a screen-reader user may not catch them. Critical confirmations belong in dialogs or inline UI.
+
+---
+
+## Next steps
+
+- [Forms](/ui-patterns/forms) — how forms wire toasts on submit
+- [API Layer](/development/api-layer) — how `baseQuery` raises error toasts
+- [Components → SnackbarProvider](/design-system/components) — the provider component

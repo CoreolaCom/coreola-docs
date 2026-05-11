@@ -1,0 +1,111 @@
+# What is Coreola
+
+Coreola is a working admin product you adopt as a foundation, not a library you bolt onto an empty React app.
+
+The [Introduction](/getting-started/introduction) gives the marketing-style overview. This page goes one level deeper — what Coreola actually is, what category it sits in, and what trade-offs it makes.
+
+---
+
+## Coreola in one paragraph
+
+Coreola is a **production-ready React admin foundation**: a runnable, opinionated app that already implements the recurring patterns of operational software — auth, RBAC, feature flags, server-driven tables, dashboards, notifications, theming, i18n, mock backend — together with one fully-built business module (Assessments) that demonstrates how to wire a real workflow onto those primitives.
+
+You start your product by changing Coreola, not by importing it.
+
+---
+
+## What category is this?
+
+Coreola is **not** any of these, even though it touches all of them:
+
+- **Not a UI library.** Component libraries (MUI, Mantine, Chakra) give you primitives. Coreola gives you a system that *uses* them in a coherent way.
+- **Not a starter template.** Templates run once at `create` time and you never touch them again. Coreola is meant to be lived in — its patterns are load-bearing throughout the product's lifetime.
+- **Not a low-code platform.** Coreola has no visual builder, no runtime config UI to define entities. Engineers write code.
+- **Not a backend.** The included `json-server` is a development convenience, not a deployable backend. Real APIs are wired in via the same RTK Query layer.
+- **Not a CMS.** Coreola is built for operational data and workflows — assessments, queues, findings — not content authoring.
+
+The closest analogue is something like **a reference application** — a complete, opinionated codebase that you fork and shape into your product.
+
+---
+
+## What problem does it solve?
+
+Building a serious admin product is a *long, repetitive process*. Every team rebuilds the same scaffolding:
+
+- A way to express routes with permissions
+- A table that handles 100k rows over the network
+- A theme system with light and dark
+- An auth flow that survives refresh
+- A consistent way to do CRUD with optimistic updates and toasts
+- A pattern for organizing complex pages with multiple data sources
+- An i18n setup that does not collapse under namespace sprawl
+- A mock backend so frontend can move ahead of backend
+
+These are not interesting problems. They are the *floor*. Coreola provides this floor so that your team's first commit is in the domain, not in plumbing.
+
+---
+
+## What is included that you cannot get from libraries
+
+Some things in Coreola are not buyable as standalone packages:
+
+- **A working MVVM convention** with a Plop generator that enforces it.
+- **A configurable route tree** that respects abilities and feature flags at navigation time.
+- **A real CASL setup** with editable users, roles, and abilities backed by an admin UI — not the academic example.
+- **A table** with column reorder, resize, visibility, server-side everything, persistence, URL state, and CSV export — already wired together and tuned for real data.
+- **A documented domain example (Assessments)** showing a workflow with statuses, findings, evidence requests, and a decision flow — including how to organize the model hooks, views, and dialogs.
+
+These can be replicated, but doing so well takes months. Coreola is the months.
+
+---
+
+## What it asks of you
+
+Coreola makes opinions explicit. To benefit from it, your team needs to be willing to:
+
+- Use Redux Toolkit + RTK Query for state and data
+- Use MUI as the primary UI surface
+- Follow the MVVM convention for non-trivial pages
+- Drive routing from `routes.ts` rather than inline JSX
+- Drive permissions from the CASL ability matrix rather than ad-hoc checks
+- Use Vite, TypeScript, and the rest of the stack listed in [Tech Stack](/overview/tech-stack)
+
+If those choices conflict with your stack, Coreola is the wrong base.
+
+---
+
+## Who is it for
+
+Coreola is a fit when your product:
+
+- Has **operational workflows** — items move through statuses, owned by humans, with audit trails
+- Has **data-heavy screens** — tables with filters, sort, pagination, exports
+- Has **admin and customer-facing operational areas** — RBAC matters, and roles need editing
+- Is built by a **small-to-mid engineering team** that benefits from convention-driven productivity over per-team flexibility
+
+Coreola is **not** a fit when your product:
+
+- Is a marketing-style site or content portal (use a CMS or a static site framework)
+- Needs unusual UI freedom that fights with MUI's design language
+- Is built around a non-React stack
+- Is small enough that bringing in this much foundation is overkill
+
+---
+
+## How to read the rest of these docs
+
+Three reading paths through the documentation depending on why you are here:
+
+| You are...                   | Read in this order                                                                                                                                              |
+|------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Evaluating Coreola           | [Introduction](/getting-started/introduction) → this page → [Architecture](/overview/architecture) → [Tech Stack](/overview/tech-stack) → [Modules / Assessments](/modules/assessments) |
+| Building a new module        | [Project Structure](/getting-started/project-structure) → [Architecture](/overview/architecture) → [Development](/development/routing) → [Adding a New Module](/customization/adding-new-module) |
+| Customizing the look         | [Design System / Principles](/design-system/principles) → [Theme](/customization/theme) → [Components](/design-system/components) |
+
+---
+
+## Next steps
+
+- [Architecture](/overview/architecture) — how the pieces fit together
+- [Tech Stack](/overview/tech-stack) — what is in the box and why
+- [Product Philosophy](/overview/product-philosophy) — the opinions Coreola is built on

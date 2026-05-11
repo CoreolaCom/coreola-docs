@@ -1,0 +1,14 @@
+# `useParentDiffX`
+
+Calculates the horizontal shift needed to visually center an element inside the viewport when its parent doesn't span full width.
+
+```ts
+useParentDiffX(ref, maxWidth?: MaxWidthPreset | number, checkAfter?: number): { diffX: number; diffSx: SxProps }
+```
+
+**Returns** — `{ diffX: number; diffSx: SxProps }`.
+
+**Use when** — For documentation pages and content cards that should remain horizontally centered despite a narrower parent.
+
+- Source: `src/hooks/useParentDiffX.ts`
+- Import: `import useParentDiffX from 'hooks/useParentDiffX'`

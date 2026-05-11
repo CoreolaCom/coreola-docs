@@ -1,0 +1,14 @@
+# `useCountryAutocomplete`
+
+Provides debounced country-search state plus props ready to spread onto an MUI `Autocomplete`.
+
+```ts
+useCountryAutocomplete(params: UseCountryAutocompleteParams): { ... }
+```
+
+**Returns** — `{ countries, selectedCountry, loadingCountries, countryInputValue, autocompleteProps }`.
+
+**Use when** — For any country/region picker that should hit the countries API as the user types.
+
+- Source: `src/hooks/useCountryAutocomplete.ts`
+- Import: `import useCountryAutocomplete from 'hooks/useCountryAutocomplete'`

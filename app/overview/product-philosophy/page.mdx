@@ -1,0 +1,125 @@
+# Product Philosophy
+
+Coreola is opinionated. The opinions are not random — they exist because admin products have failure modes, and these are the ones we have chosen to design against.
+
+This page makes those opinions explicit.
+
+---
+
+## The four principles
+
+### 1. Structure over freedom
+
+A good convention saves more time than a flexible API. Coreola hard-codes the structure of a page — view + model hook + per-page hooks + types — because every team that builds without a convention ends up inventing a worse one anyway.
+
+> If two engineers can solve the same problem in five different ways, they will. Coreola picks one way and asks you to live with it.
+
+What this looks like in practice:
+
+- Pages are scaffolded by Plop, not assembled freehand.
+- Tables are configured, not custom-rendered. The table component is the answer.
+- Forms go through react-hook-form + yup, even simple ones.
+- New API resources are RTK Query slices, not bespoke fetchers.
+
+You can break these rules, but the gradient of the codebase is against you.
+
+### 2. Consistency over customization
+
+A consistent product is a fast product to build *and* a calm product to use. Coreola optimizes for both:
+
+- One spacing scale, one type scale, one set of color tokens.
+- One way to show "loading", one way to show "empty", one way to show "error".
+- One way to confirm a destructive action.
+- One layout for details pages, one layout for queues, one layout for dashboards.
+
+When a designer asks for a deviation from this, the right first answer is "let us see if the existing pattern can stretch to cover it." Most of the time, it can.
+
+> Customization should be a deliberate decision, not the default.
+
+### 3. Real workflows over demos
+
+Most admin templates fall apart on the second screen. Coreola is built around a **real workflow** (the Assessments module) so that the patterns survive contact with reality:
+
+- Items have **statuses** that progress through a defined flow.
+- There are **side resources** (findings, evidence) that hang off the main item.
+- There is an **operational view** (the queue) that is different from the catalog view.
+- There is a **decision flow** with constraints (you can only approve when conditions are met).
+- There is a **dashboard** that aggregates the same data.
+
+If a pattern works for assessments, it works for tickets, applications, claims, audits, and most other admin domains.
+
+### 4. Speed without shortcuts
+
+Going fast and going clean are usually framed as a trade-off. Coreola treats them as the same thing — the patterns that let you build features in a day are the same patterns that prevent technical debt.
+
+- Plop generators get you a page in 30 seconds.
+- The MVVM convention keeps that page maintainable in six months.
+- The route config keeps navigation, breadcrumbs, abilities, and feature flags coherent without ceremony.
+
+The goal is **flow state on hard problems**. Coreola handles the easy ones.
+
+---
+
+## Concrete trade-offs Coreola makes
+
+### Opinionated stack over flexibility
+
+Coreola assumes Redux Toolkit + RTK Query + MUI + react-hook-form + yup. If your team prefers Mantine, Zustand, and React Query, Coreola is not for you. Forking to swap stacks is technically possible but defeats the point.
+
+### Working application over reusable library
+
+Coreola is shipped as a **codebase you adopt and modify**, not as an `npm install` package. This means:
+
+- ✅ You own the code. There is no upstream library to break.
+- ✅ Customization is just code edits, not config gymnastics.
+- ❌ You cannot get bug fixes by bumping a version.
+- ❌ Merging upstream Coreola updates into your fork takes effort.
+
+### Server-driven everything
+
+Coreola assumes the backend handles pagination, sort, filtering, and search. The table component requires it. This is the right call for production data sets but takes more backend work for trivial cases.
+
+### Convention enforced through generators, not lints
+
+Coreola does not have an ESLint rule that forbids `useState` inside view components. It has a Plop generator that produces the right structure. The convention is documentation + scaffolding + code review, not tooling.
+
+### MUI as the design surface
+
+You can theme MUI heavily, and Coreola does. But you cannot easily replace it. If your designer wants a radically non-MUI aesthetic, that is a fight.
+
+### Two-target API layer
+
+The split between `SYSTEM_API` (real) and `MOCKUP_API` (mock) costs a tiny bit of complexity in the API slices. The payoff is the ability to ship features ahead of backend availability and to demo the app without any backend at all.
+
+---
+
+## What Coreola is *not* trying to be
+
+To stay focused, Coreola refuses some things on purpose:
+
+- **A no-code/low-code tool.** Engineers write code. There is no runtime entity builder, no visual workflow editor.
+- **A multi-product platform.** Coreola is one app, not a shell that hosts micro-frontends. It can be extended into one, but that is your work.
+- **A backend.** json-server is for development only. Real APIs live in your repo.
+- **A design system.** Coreola adopts MUI's design language. It is a **product** built on a design system, not a design system itself. (See [Design System / Principles](/design-system/principles) for what Coreola does add on top of MUI.)
+- **A perfect example.** There are pragmatic compromises in the codebase. They are documented when they matter.
+
+---
+
+## How to disagree well
+
+You will eventually want to break a convention. That is fine — Coreola's conventions are not religion. The right way to break one:
+
+1. **Read why it exists.** Most conventions in Coreola have a reason in the codebase or in this documentation.
+2. **State the trade-off in your PR.** "We are deviating because X, accepting Y as a cost."
+3. **Apply the deviation consistently.** One inconsistent page is worse than zero or many.
+4. **Update the docs.** If a deviation becomes the new norm, write it down.
+
+The codebase is owned by your team, not by us. These docs describe the original opinions; your team's evolved opinions belong here too.
+
+---
+
+## Next steps
+
+- [What is Coreola](/overview/what-is-coreola) — positioning and audience fit
+- [Architecture](/overview/architecture) — how the opinions translate into code
+- [Adding a New Module](/customization/adding-new-module) — the convention in practice

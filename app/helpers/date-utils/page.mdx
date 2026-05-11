@@ -1,0 +1,12 @@
+# `dateUtils.ts`
+
+Luxon-based date formatting and duration helpers, locale-aware.
+
+- `getDate(date, dateFormat)` — Formats an ISO date string; accepts a Luxon format token string or an `Intl.DateTimeFormatOptions` object.
+- `getDaysDiffFromToday(date)` — Whole days between an ISO date and today, clamped to `0`.
+- `formatDaysAsDuration(totalDays)` — Renders a number of days as a localized "1 year • 2 months • 5 days" string.
+
+Use these instead of bare `Date` / `toLocaleString` — they respect the user's selected locale automatically.
+
+- Source: `src/helpers/dateUtils.ts`
+- Import: `import { getDate, getDaysDiffFromToday, formatDaysAsDuration } from 'helpers/dateUtils'`

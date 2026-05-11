@@ -1,0 +1,161 @@
+# Running Locally
+
+Day-to-day workflow for developing against a local Coreola checkout.
+
+If this is your first run, follow [Installation](/getting-started/installation) first to install dependencies and configure `.env.local`.
+
+---
+
+## The two-process setup
+
+Local development runs two processes side by side:
+
+| Process       | Started by          | Port  | Purpose                                       |
+|---------------|---------------------|-------|-----------------------------------------------|
+| Vite dev server | `npm start`        | 3001  | Bundles, serves, and hot-reloads the app      |
+| Mock backend  | `npm run json-server` | 7000  | json-server + json-server-auth + custom Express endpoints |
+
+Both must be running for a working environment in mock mode.
+
+---
+
+## Starting the dev server
+
+```bash
+npm start
+```
+
+Under the hood, this script runs:
+
+```
+npx tsc --build --clean && vite --force
+```
+
+- `tsc --build --clean` clears the TypeScript build cache so the next compile is fresh.
+- `vite --force` re-optimizes dependencies, ignoring the cache. Useful after dependency changes; harmless otherwise.
+- Vite opens the browser automatically (configured by `server.open: true` in `vite.config.js`).
+
+Vite's listener is bound to `host: true`, so the dev server is also reachable from other devices on your LAN at `http://<your-lan-ip>:3001` — handy for mobile testing.
+
+---
+
+## Starting the mock backend
+
+```bash
+npm run json-server
+```
+
+This script does two things in sequence:
+
+1. Runs `node json-server/json-db.cjs`, which merges JSON fixtures from `json-server/data/api/` into `json-server/data/db.json`.
+2. Runs `nodemon json-server/server.cjs`, starting the json-server + json-server-auth instance on port `7000` and watching for changes to the server file.
+
+The console will print every registered route. Authentication API endpoints are `/login`, `/register`, and `/send-password`; the UI routes remain `/auth/sign-in`, `/auth/sign-up`, and `/auth/send-password`.
+
+> **Note:** `db.json` is regenerated every time you run `npm run json-server`. Any data created during a session via the UI is lost on restart unless you manually persist it. If you need stable seed data, add it to the JSON files under `json-server/data/api/`.
+
+---
+
+## Hot reload
+
+- **Vite HMR** updates the browser instantly on most code changes — components, hooks, styles, and MDX docs all hot-reload.
+- **Full page reload** is triggered for changes that cannot be hot-replaced (Redux store shape, `routes.ts`, theme tokens).
+- **TypeScript errors** appear as a non-blocking overlay (`vite-plugin-checker` configuration in `vite.config.js`). Close the overlay with the `x` in the corner; the underlying error remains in the console until fixed.
+
+---
+
+## Switching between mock and real backends
+
+Coreola uses two API base URLs in parallel — `SYSTEM_API` (real) and `MOCKUP_API` (mock). Each RTK Query slice picks one. You toggle behavior by setting the variables in `.env.local`:
+
+```env
+# Mock-only mode
+VITE_APP_SYSTEM_API_URL=
+VITE_APP_MOCKUP_API_URL=http://localhost:7000
+
+# Real-only mode (no json-server needed)
+VITE_APP_SYSTEM_API_URL=https://staging-api.example.com
+VITE_APP_MOCKUP_API_URL=
+
+# Hybrid (real for some endpoints, mock for the rest)
+VITE_APP_SYSTEM_API_URL=https://staging-api.example.com
+VITE_APP_MOCKUP_API_URL=http://localhost:7000
+```
+
+Restart `npm start` after changing `.env.local` — Vite reads env files at startup, not on every request.
+
+Full reference: [Environment](/getting-started/environment).
+
+---
+
+## Useful side scripts
+
+Run these as needed in additional terminals:
+
+| Script                    | When to use                                                  |
+|---------------------------|--------------------------------------------------------------|
+| `npm run merge-data`      | Watch and rebuild the mock DB without restarting the server  |
+| `npm run storybook`       | Optional component sandbox after Storybook is initialized     |
+| `npm run test:watch`      | Vitest in watch mode                                         |
+| `npm run lint`            | ESLint over `src/`                                           |
+| `npm run circular`        | Detect circular imports with madge                           |
+
+---
+
+## Troubleshooting
+
+### Port 3001 already in use
+
+Another Vite or React process is occupying the port. Either stop it, or override:
+
+```bash
+npm start -- --port 3002
+```
+
+This passes Vite's `--port` flag through the `npm start` script.
+
+### Port 7000 already in use
+
+Set a different json-server port and update both endpoints in `.env.local`:
+
+```env
+JSON_SERVER_PORT=7100
+VITE_APP_MOCKUP_API_URL=http://localhost:7100
+```
+
+### Sign-in fails with 401 against the mock backend
+
+- Confirm json-server is running and reachable at `http://localhost:7000`.
+- Confirm the email exists in `json-server/data/api/users.json`. The mock auth uses the bcrypt-hashed password from that file.
+- If you reset `db.json` (intentional regen), any sign-up accounts are gone — sign up again, or sign in with a seeded user.
+
+### MDX changes do not show
+
+The MDX rollup plugin compiles `.mdx` files at module-load time. Most edits hot-reload, but a hard reload (`Ctrl+Shift+R` / `Cmd+Shift+R`) may be needed after structural changes (imports, frontmatter shape).
+
+### `Cannot find module 'api/...'`
+
+Path aliases are defined in both `vite.config.js` (Vite resolution) and `tsconfig.json` (TypeScript resolution). If you add a new alias, update both. After editing `tsconfig.json`, restart your editor's TypeScript server.
+
+### Stale TypeScript cache
+
+```bash
+npx tsc --build --clean && npm start
+```
+
+This is what `npm start` already does, but it can be useful to run on its own when something feels off.
+
+### Vite cache feels broken
+
+```powershell
+Remove-Item -Recurse -Force node_modules/.vite
+npm start
+```
+
+---
+
+## Next steps
+
+- [Project Structure](/getting-started/project-structure) — where things live
+- [Architecture Overview](/overview/architecture) — how the pieces fit together
+- [Mock Backend](/development/mock-backend) — json-server internals, custom endpoints, fixtures

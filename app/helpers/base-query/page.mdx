@@ -1,0 +1,11 @@
+# `baseQuery.ts`
+
+Shared RTK Query base query factory used by every API slice.
+
+- `getBaseQuery(path, targetAPI)` — Returns a configured base query that injects the `Authorization` header, tracks in-flight requests, raises snackbar errors for failures, and normalizes JSON-server array responses into the project's `Pagination` shape.
+- `Pagination` — `{ page, limit, pages, total, items }` envelope used across paginated endpoints.
+
+Use this in every new API slice rather than crafting a `fetchBaseQuery` by hand.
+
+- Source: `src/helpers/baseQuery.ts`
+- Import: `import { getBaseQuery, Pagination } from 'helpers/baseQuery'`

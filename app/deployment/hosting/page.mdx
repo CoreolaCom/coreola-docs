@@ -1,0 +1,250 @@
+# Hosting
+
+Coreola is a single-page application — a static bundle (`build/`) and a server that talks to your backend. There is no Node server, no SSR, no edge functions. Hosting requirements are accordingly modest.
+
+This page covers the production hosting requirements and the most common deployment targets.
+
+---
+
+## Hosting requirements
+
+For the SPA itself, the host must:
+
+1. **Serve static files** with appropriate cache headers.
+2. **Fall back to `index.html`** for unknown routes — required for client-side routing.
+3. **(Recommended) Serve over HTTPS.**
+4. **(Optional) Inject a CSP nonce** if you enforce a strict Content Security Policy.
+
+Any modern static host (Vercel, Netlify, Cloudflare Pages, AWS S3 + CloudFront, Azure Static Web Apps, GitHub Pages with a small caveat) meets these requirements out of the box.
+
+The **mock backend** (`json-server`) is for local development only. Production talks to your real backend via `VITE_APP_SYSTEM_API_URL`.
+
+---
+
+## Cache headers
+
+The convention for Coreola's `build/` output:
+
+| File pattern         | Cache-Control                                  | Why                          |
+|----------------------|------------------------------------------------|------------------------------|
+| `index.html`         | `no-cache` or short `max-age` (`60s`)          | Updates on every deploy      |
+| `assets/*.js`        | `public, max-age=31536000, immutable`          | Hashed in filename           |
+| `assets/*.css`       | `public, max-age=31536000, immutable`          | Hashed in filename           |
+| `assets/*` (images, fonts) | `public, max-age=31536000, immutable`     | Hashed in filename           |
+
+`index.html` is the one short-cached file because it references the hashed assets. Everything else is hashed and immutable.
+
+The hash mechanism is what makes aggressive caching safe: a new deploy produces new hashes; old assets stay in the cache for clients still on the old `index.html`; once that `index.html` expires, they download the new bundle.
+
+---
+
+## SPA fallback
+
+Coreola uses client-side routing. When a user navigates directly to `/collections/assessments/details/123`, the server must respond with `index.html` — not a 404 — so the React app can mount and handle the route.
+
+The fallback rule, by host:
+
+#### Vercel
+
+`vercel.json`:
+
+```json
+{
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
+```
+
+#### Netlify
+
+`netlify.toml` or `_redirects`:
+
+```
+/*    /index.html   200
+```
+
+#### Cloudflare Pages
+
+Automatic when you use the framework preset for "create-react-app" or "vite".
+
+#### Nginx
+
+```nginx
+location / {
+  try_files $uri $uri/ /index.html;
+}
+```
+
+#### Apache
+
+`.htaccess`:
+
+```
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule . /index.html [L]
+```
+
+#### S3 + CloudFront
+
+CloudFront error responses → `403` and `404` → respond with `200 /index.html`. (S3 alone is not enough because `/some-route` returns 404 unless a CloudFront error response rewrites it.)
+
+---
+
+## Environment variables in production
+
+Vite **bakes env vars into the bundle at build time**. There is no runtime substitution by default.
+
+This means each environment (staging, production) typically gets **its own build**, with the appropriate `.env.production` or `.env.staging` file loaded during the build.
+
+Two patterns:
+
+#### Build-per-environment (default)
+
+1. Each environment has its own `.env.<mode>` file checked into your deployment pipeline.
+2. CI runs `npm run build -- --mode <env>`.
+3. The resulting `build/` deploys to that environment only.
+
+Simple, predictable. Recommended for most teams.
+
+#### Runtime config endpoint
+
+If you want one build artifact deployable to multiple environments:
+
+1. Build with placeholders or omit the env-specific values.
+2. Add a `/config.json` endpoint your backend serves.
+3. Have the app fetch `/config.json` at startup and use those values instead of `import.meta.env`.
+
+This is more complex but lets you promote the exact same `build/` from staging to production. Most Coreola adopters do not need it; mention it here for teams that do.
+
+---
+
+## Deploying — quick recipes
+
+#### Vercel
+
+1. `vercel.json` with the rewrite rule above.
+2. Connect the repo in Vercel.
+3. Build command: `npm run build`.
+4. Output directory: `build`.
+5. Set `VITE_APP_SYSTEM_API_URL` in Vercel's environment settings.
+
+Vercel handles cache headers automatically based on the file extension.
+
+#### Netlify
+
+1. `netlify.toml`:
+   ```toml
+   [build]
+   command   = "npm run build"
+   publish   = "build"
+
+   [[redirects]]
+   from    = "/*"
+   to      = "/index.html"
+   status  = 200
+   ```
+2. Set env vars in the Netlify dashboard.
+
+#### S3 + CloudFront
+
+1. `aws s3 sync build/ s3://your-bucket --delete`.
+2. CloudFront distribution pointing at the bucket.
+3. CloudFront error responses: 403 → 200 `/index.html`, 404 → 200 `/index.html`.
+4. CloudFront caching policy: long for `assets/*`, short for `index.html`.
+
+Use a CI job to invalidate the CloudFront cache on `index.html` after each deploy.
+
+#### Nginx on your own server
+
+1. Copy `build/` to `/var/www/coreola/`.
+2. Nginx server block:
+   ```nginx
+   server {
+     listen 443 ssl http2;
+     server_name admin.example.com;
+
+     root /var/www/coreola;
+     index index.html;
+
+     location / {
+       try_files $uri $uri/ /index.html;
+     }
+
+     location /assets/ {
+       expires 1y;
+       add_header Cache-Control "public, immutable";
+     }
+
+     location = /index.html {
+       expires -1;
+       add_header Cache-Control "no-cache";
+     }
+   }
+   ```
+
+---
+
+## Sub-path deployments
+
+If Coreola serves under a sub-path (e.g., `https://example.com/admin/`):
+
+1. Set `VITE_BASE_URL=/admin/` in `.env.local` (or the environment build file).
+2. Update the host config to route `/admin/*` to the SPA's `index.html`.
+3. Confirm `<base>` resolution in `index.html` is correct.
+
+The router and asset paths pick up `VITE_BASE_URL` automatically via `vite.config.js → base`.
+
+---
+
+## CSP
+
+Coreola supports a strict CSP via the custom Vite plugin (`vite-plugin-csp-nonce.js`) that injects a `__CSP_NONCE__` placeholder in inline `<script>` and `<style>` tags.
+
+The host needs to:
+
+1. Generate a per-request nonce.
+2. Replace `__CSP_NONCE__` in `index.html` with that nonce.
+3. Set `Content-Security-Policy: script-src 'self' 'nonce-<value>'; style-src 'self' 'nonce-<value>'; ...`
+
+For static hosts that cannot do per-request substitution (most CDNs), the alternatives are:
+
+- **Drop the strict CSP** and rely on the same-origin policy + auth.
+- **Front the static host with a small server** (Cloud Workers, Lambda@Edge, Nginx) that does the substitution.
+
+Most Coreola adopters do not enforce CSP and ignore this; teams in regulated environments use the substituting server.
+
+---
+
+## Performance checks before going live
+
+A short pre-launch checklist:
+
+- [ ] First contentful paint: < 1.5s on a 3G connection.
+- [ ] Total bundle on first load: a few hundred KB gzipped (run `npm run analyze`).
+- [ ] Subsequent navigations: < 200ms (per-route chunks are small).
+- [ ] All assets served with appropriate cache headers.
+- [ ] HTTPS enforced; HTTP redirects to HTTPS.
+- [ ] No browser console errors on the production build.
+- [ ] Deep-link refresh works (SPA fallback verified).
+
+Audit with Lighthouse if you want an objective number.
+
+---
+
+## Anti-patterns
+
+- **One build per environment with hard-coded URLs in source.** Use env vars.
+- **Skipping the SPA fallback.** Deep links will 404 and users will be confused.
+- **Caching `index.html` for a year** because "everything else is cached for a year". `index.html` is the only short-cache file.
+- **Serving over HTTP.** Modern admin tools should require HTTPS. Most browsers limit Service Workers and other APIs over HTTP anyway.
+- **Trying to serve the json-server in production.** It is a dev mock, not a production backend.
+
+---
+
+## Next steps
+
+- [Build](/deployment/build) — what produces the `build/` folder
+- [Environment](/getting-started/environment) — env vars per environment
+- [API Layer](/development/api-layer) — production backend integration

@@ -1,0 +1,187 @@
+# Icons
+
+Coreola uses **Material Symbols (Outlined)** as the default icon family, accessed through `@mui/icons-material`. A small set of brand-specific icons lives alongside in `src/components/icons/`.
+
+This page covers which icons to use, how to wire them, and the conventions that keep the UI coherent.
+
+---
+
+## Two sources
+
+#### Material UI icons (`@mui/icons-material`)
+
+The default. Every MUI icon is available as a React component:
+
+```tsx
+import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+```
+
+Each icon name is the Material Symbols glyph name in PascalCase plus the variant suffix:
+
+| Variant      | Suffix         | When to use                                |
+|--------------|----------------|--------------------------------------------|
+| Filled       | (none)         | Selected / active state only               |
+| Outlined     | `Outlined`     | **Default — use everywhere**               |
+| Rounded      | `Rounded`      | Not used in Coreola                        |
+| Two-tone     | `TwoTone`      | Not used in Coreola                        |
+| Sharp        | `Sharp`        | Not used in Coreola                        |
+
+**Use `Outlined` by default**, switch to filled only to indicate the **active** state of a nav item or toggle.
+
+#### Coreola custom icons (`src/components/icons/`)
+
+For brand glyphs and domain-specific shapes that MUI does not have:
+
+- `Coreola.tsx` — the product logo (used in the sidebar, auth screens)
+- `Empty.tsx` — the illustration used by `EmptyState`
+- `PriorityCritical.tsx`, `PriorityHigh.tsx`, `PriorityMedium.tsx`, `PriorityLow.tsx` — the priority indicator glyphs (consumed by the `Priority` component)
+- `Icons.tsx` — a barrel that re-exports the above
+
+These are React components produced by `vite-plugin-svgr` from the SVG files in `src/assets/icons/`. The plugin is configured (see `vite.config.js`) to give every imported SVG a `ReactComponent` export and to inject `ref` and `memo`.
+
+To add a new custom icon:
+
+1. Drop the SVG into `src/assets/icons/`.
+2. Create a wrapping component in `src/components/icons/` that imports it via `?react`:
+
+   ```tsx
+   import { ReactComponent as Glyph } from 'assets/icons/glyph.svg?react';
+   import { SvgIcon, type SvgIconProps } from '@mui/material';
+
+   export default function Glyph(props: SvgIconProps) {
+     return <SvgIcon component={Glyph} inheritViewBox {...props} />;
+   }
+   ```
+
+3. Re-export it from `Icons.tsx`.
+
+Wrapping the raw SVG in `SvgIcon` gives the new icon all the standard MUI behavior — `fontSize`, `color`, `htmlColor`, and theme-aware tinting.
+
+---
+
+## Sizes
+
+MUI's icon `fontSize` prop accepts:
+
+| Prop value     | Pixel size | Use                                          |
+|----------------|------------|----------------------------------------------|
+| `inherit`      | matches parent text | Inline with text (e.g. inside a button)     |
+| `small`        | 20         | Dense controls, table actions               |
+| `medium` (default) | 24     | Standard toolbar icons, sidebar             |
+| `large`        | 35         | Hero surfaces, empty states                 |
+
+Coreola overrides a few of these per component in `options.ts`:
+
+- **`MuiListItemIcon`** — SVGs are forced to **16px** (`width: rem(16)`) so list rows stay compact.
+- **`MuiChip` delete icon** — 16px inside a 32px button (24px for `small`, 12px inside 18px for `tiny`).
+- **`MuiSelect` icon** — sized per input size (16/20/24px).
+- **`MuiTableSortLabel`** — 16×16.
+
+These are baked in — you do not need to set them per usage.
+
+---
+
+## Color
+
+Icons inherit color from their text context by default. Override with `color`:
+
+```tsx
+<HomeOutlinedIcon color="primary" />
+<DeleteOutlineIcon color="error" />
+```
+
+`color` accepts MUI palette roles: `inherit | action | disabled | primary | secondary | error | info | success | warning`. Avoid `htmlColor` (raw hex) — that breaks the theme contract.
+
+For one-off custom colors:
+
+```tsx
+<HomeOutlinedIcon sx={{ color: 'text.secondary' }} />
+```
+
+---
+
+## Common usage patterns
+
+#### Inside a button
+
+```tsx
+<Button startIcon={<SaveOutlinedIcon />} variant="contained">
+  Save changes
+</Button>
+```
+
+The icon inherits text color and sizes correctly. Use `startIcon` for affirmative actions, `endIcon` for "more" affordances (caret, arrow).
+
+#### Icon-only button (`IconButton`)
+
+```tsx
+<IconButton aria-label="Delete" size="small">
+  <DeleteOutlineIcon />
+</IconButton>
+```
+
+Always provide `aria-label`. An icon without text is invisible to screen readers.
+
+#### In a sidebar menu
+
+The sidebar uses `iconRef` on the route object:
+
+```ts
+{
+  path: 'assessments',
+  title: 'Assessments',
+  iconRef: AnalyticsOutlinedIcon,
+  // ...
+}
+```
+
+`iconRef` is a component reference, not an element. The menu component instantiates it.
+
+#### In a table cell
+
+```tsx
+<TableCell>
+  <Stack direction="row" alignItems="center" spacing={1}>
+    <CheckCircleOutlineIcon fontSize="small" color="success" />
+    <span>Approved</span>
+  </Stack>
+</TableCell>
+```
+
+Pair with text — never use icon alone for meaning.
+
+#### In an `EmptyState`
+
+The `EmptyState` component accepts an icon prop and renders it at hero size. Use the custom `Empty` glyph for default empty results, or pass a domain-appropriate MUI icon.
+
+---
+
+## Conventions
+
+A few rules that come up repeatedly in code review:
+
+1. **Outlined by default.** Filled = active. Two-tone, rounded, sharp = not in this codebase.
+2. **Always import explicitly** from `@mui/icons-material/<Name>`. Never use barrel imports like `import { Home } from '@mui/icons-material'` — that breaks tree-shaking.
+3. **Name imports clearly.** `import HomeOutlinedIcon from ...` not `import Home from ...`. The `Icon` suffix prevents collisions with domain types.
+4. **One icon per concept.** If "delete" already uses `DeleteOutlineIcon`, do not introduce `DeleteForeverIcon` for a different delete flow — make the dialog message do the work.
+5. **Skip the icon if it adds nothing.** A "Save" button does not need a floppy disk next to the label. Icons are for scanning, not decoration.
+
+---
+
+## Icon search
+
+The Material Symbols catalogue is huge. To find an icon:
+
+- Browse the MUI icons explorer: filter by Outlined, search by concept.
+- Once you have the glyph name, the import path is `@mui/icons-material/<GlyphName>Outlined`.
+
+If the search turns up nothing close, consider whether the UI actually needs an icon at all (see rule 5 above). Adding a custom SVG is a last resort and should be cleared in design review.
+
+---
+
+## Next steps
+
+- [Components](/design-system/components) — components that consume the icon set
+- [Principles](/design-system/principles) — accessibility and visual rules around icons
+- [Tables](/ui-patterns/tables) — patterns for action icons in rows

@@ -1,0 +1,255 @@
+# Build
+
+Coreola is built with **Vite**. A production build produces a static site (HTML, JS chunks, assets) ready to be hosted by any static server or CDN.
+
+This page covers the build commands, the output, code splitting, and the typical adjustments you make per environment.
+
+- Config: `vite.config.js`
+- Output: `build/`
+- Mode flag: `--mode <name>`
+
+---
+
+## Commands
+
+| Script                       | Mode          | Output      | Notes                                  |
+|------------------------------|---------------|-------------|----------------------------------------|
+| `npm run build`              | `production`  | `build/`    | TypeScript check + production build    |
+| `npm run build-dev`          | `development` | `build/`    | Same output, dev-mode env loaded       |
+| `npm run analyze`            | `analyze`     | `build/`    | Build + open bundle visualizer         |
+| `npm run preview`            | n/a           | n/a         | Serve the existing `build/` locally    |
+| `npm run serve`              | n/a           | n/a         | Same idea via the `serve` package      |
+
+#### `npm run build`
+
+The canonical production build. The script runs:
+
+```
+tsc && vite build
+```
+
+`tsc` runs the TypeScript compiler in check mode (no emit — the compiler verifies types and fails the build if any are wrong). `vite build` produces the bundle.
+
+#### `npm run build-dev`
+
+Same `vite build`, but with `--mode development`. Useful when:
+
+- You need a built artifact that loads dev-mode env vars (e.g., `VITE_APP_MOCKUP_API_URL` pointing at a local json-server) for a stakeholder demo.
+- You want sourcemaps without minification overhead.
+
+This is **not** for production deployment.
+
+#### `npm run analyze`
+
+Runs `vite build --mode analyze`. `vite.config.js` adds `rollup-plugin-visualizer` in this mode with `open: true`, so the bundle treemap pops in your browser when the build completes.
+
+Use this when:
+
+- A chunk feels suspiciously large.
+- You added a dependency and want to confirm it tree-shakes.
+- You are auditing what is downloaded on first load.
+
+#### `npm run preview` / `npm run serve`
+
+Both serve the `build/` folder locally. Use one or the other to smoke-test the actual production artifact before deploying.
+
+---
+
+## Output structure
+
+```
+build/
+├─ index.html             # Entry HTML with hashed asset references
+├─ assets/                # Hashed JS chunks, CSS, images, fonts
+├─ favicon.ico
+├─ logo192.png
+├─ logo512.png
+├─ manifest.json
+├─ robots.txt
+└─ stats.html             # rollup-plugin-visualizer artifact (production mode)
+```
+
+All asset filenames include content hashes — they are safe to cache aggressively (one year, immutable).
+
+The HTML file is the only short-cached file (it references the hashed assets, so it must update on every deploy).
+
+---
+
+## Code splitting
+
+`vite.config.js` declares **manual chunks** for the largest shared dependencies:
+
+```js
+rollupOptions: {
+  output: {
+    manualChunks: {
+      react:  ['react', 'react-dom'],
+      mui:    ['@mui/material', '@mui/icons-material', '@mui/lab'],
+      redux:  ['redux', 'react-redux', '@reduxjs/toolkit', 'redux-thunk', 'redux-persist'],
+      i18n:   ['i18next', 'react-i18next'],
+      lodash: ['lodash'],
+    },
+  },
+}
+```
+
+Plus **per-route** code splitting via the route-config + `import.meta.glob` mechanism (see [Routing](/development/routing)). Every page is its own chunk and is fetched on demand.
+
+The result: a moderately-sized initial bundle (React + MUI + Redux + i18n + your shell) and many small page chunks that download as the user navigates.
+
+#### When to add a manual chunk
+
+Add a `manualChunks` entry when:
+
+- A dependency is **shared by many routes** (so it would be duplicated).
+- The dependency is large (chart libs, code highlighters).
+- Bundle analysis shows it appears in multiple chunks.
+
+Coreola already groups React, MUI, Redux, i18n, and Lodash. Common additions:
+
+```js
+manualChunks: {
+  ...,
+  charts: ['@nivo/bar', '@nivo/line', '@nivo/pie'],
+  highlighter: ['shiki'],
+}
+```
+
+Confirm with `npm run analyze` after.
+
+---
+
+## Environment variables at build time
+
+Vite's `loadEnv(mode, cwd)` is called at the top of `vite.config.js`. It reads `.env`, `.env.<mode>`, `.env.local`, and `.env.<mode>.local` in the standard precedence order.
+
+Variables prefixed with `VITE_` are exposed to the client via `define: { 'process.env': exposedEnvVars }`. See [Environment](/getting-started/environment) for the full reference.
+
+Two build-time-only variables are produced by `vite.config.js`:
+
+- `VITE_APP_VERSION` — `${packageName}_${packageVersion}#${nanoid}`. Unique per build.
+- `VITE_APP_VERSION_NUMBER` — `package.json` version, trimmed.
+
+Use these to display a version in the footer (Coreola does this via `settings.version`) or to tag client-side logs.
+
+---
+
+## TypeScript and the build
+
+`npm run build` runs `tsc && vite build`. The `tsc` step:
+
+- Uses `tsconfig.json` (not `tsconfig.eslint.json`).
+- Runs in `--noEmit` mode (effectively) — the actual build is done by Vite + esbuild, which transpiles TypeScript without type-checking.
+- Fails the build if any file has type errors.
+
+If you want to skip type-checking for a fast build (you are debugging a build issue and the types are fine), run `npx vite build` directly. Do **not** ship this skip to CI.
+
+---
+
+## Source maps
+
+`vite.config.js` controls source maps via the `build.sourcemap` option:
+
+```js
+build: {
+  sourcemap: mode !== 'production',
+  // ...
+}
+```
+
+- **Production** — no source maps. Smaller deploy, opaque traces.
+- **Other modes** — source maps included. Useful for analyzing a build that misbehaves.
+
+If you need source maps in production (Sentry, error reporting), flip this and consider uploading the maps to your error service without publishing them publicly.
+
+---
+
+## CSP and the nonce plugin
+
+Coreola includes a custom Vite plugin — `vite-plugin-csp-nonce.js` — that injects a `nonce` placeholder into inline `<script>` and `<style>` tags. Your server replaces the placeholder with a per-request nonce when serving `index.html`.
+
+If you do not enforce CSP, the placeholder is harmless. If you do, this is how Coreola supports strict CSP without resorting to `unsafe-inline`.
+
+---
+
+## Asset inlining
+
+`vite.config.js` sets `assetsInlineLimit: 0` — **no assets are inlined**. Every image and font is emitted as a separate file with a content hash.
+
+Why: inlined assets balloon the JS bundle and break caching. Coreola prefers separate files for everything.
+
+If you want to inline tiny SVGs, change the limit (the default is 4096 bytes) or import them as React components via SVGR (Coreola already does this — see `vite-plugin-svgr` in the config).
+
+---
+
+## CSS
+
+CSS is built with the Vite default. CSS modules are configured with camelCase locals:
+
+```js
+css: { modules: { localsConvention: 'camelCase' } }
+```
+
+Most styling is via Emotion (`styled`, `sx`) and MUI's theme system. Plain CSS files are rare.
+
+---
+
+## Build-time errors and how to read them
+
+#### TypeScript error
+
+Output begins with the file path and line number; the build halts.
+
+```
+src/features/.../Foo.tsx:42:5 - error TS2322: Type 'string' is not assignable to type 'number'.
+```
+
+Fix the type error and re-run.
+
+#### Vite/Rollup error
+
+Usually a missing module or a circular import.
+
+```
+[vite]: Rollup failed to resolve import "missing/module" from "src/.../File.tsx"
+```
+
+Check the import path. If it is a workspace path, confirm the alias in `vite.config.js` and `tsconfig.json`.
+
+#### MDX parse error
+
+Same shape, with `[plugin:@mdx-js/rollup]` in the prefix. Almost always an unescaped `{...}` outside an inline code span — see [Coding Conventions](/development/coding-conventions).
+
+---
+
+## CI integration
+
+A minimal CI build step:
+
+```yaml
+- run: npm ci
+- run: npm run lint
+- run: npx tsc --noEmit
+- run: npm test
+- run: npm run build
+```
+
+Cache `node_modules` and `~/.cache/vite` for fast incremental builds. The `build/` artifact can be uploaded for deployment.
+
+---
+
+## Anti-patterns
+
+- **Skipping the `tsc` step in CI** because "Vite builds anyway". The build will succeed on broken types; runtime breakage follows.
+- **Source maps in production without an upload pipeline.** They leak your source to anyone with dev tools. Either skip them or upload them privately.
+- **One huge manual chunk** containing "vendor". Modern HTTP/2 makes many small chunks cheap; one big vendor chunk delays first paint.
+- **Hard-coding API URLs in source.** Use env vars so the same build artifact deploys to multiple environments.
+- **Different builds per environment.** Build once, deploy many times. Configure differences at runtime via env vars or a config endpoint.
+
+---
+
+## Next steps
+
+- [Hosting](/deployment/hosting) — where to put the `build/` folder
+- [Environment](/getting-started/environment) — build-time variables
+- [Routing](/development/routing) — how per-route code splitting works

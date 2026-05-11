@@ -1,0 +1,10 @@
+# `styledProps.ts`
+
+Configuration object that filters transient `$`-prefixed props from MUI styled components.
+
+- `styledProps` — MUI `styled()` options whose `shouldForwardProp` blocks props starting with `$`. Pass to `styled('div', styledProps)`.
+
+A two-line module that prevents dozens of "unknown DOM attribute" warnings.
+
+- Source: `src/helpers/styledProps.ts`
+- Import: `import { styledProps } from 'helpers/styledProps'`

@@ -1,0 +1,109 @@
+# Changelog
+
+This page records noteworthy changes to Coreola itself — the foundation, not your fork of it.
+
+If you are extending Coreola for your product, keep your own changelog (a separate page, a `CHANGELOG.md`, or release notes). This changelog tracks the **template**.
+
+The current Coreola version lives in `package.json` and is surfaced in the app as `settings.version` (built from `VITE_APP_VERSION`).
+
+---
+
+## Format
+
+Entries follow a lightweight version of [Keep a Changelog](https://keepachangelog.com/):
+
+- Most recent version at the top.
+- Categories per release: **Added** / **Changed** / **Fixed** / **Removed** / **Deprecated** / **Security**.
+- Each item is one line — link to the relevant docs page or PR for context.
+
+A new release moves the `## Unreleased` section to a versioned heading and starts a fresh `## Unreleased`.
+
+---
+
+## Unreleased
+
+#### Added
+
+- In-app documentation system. Routes under `/documentation/*` render localized MDX pages. See [Project Structure](/getting-started/project-structure).
+- Plop generators: `documentation-section` and `documentation-page` scaffold the docs surface.
+
+#### Changed
+
+- README rewritten to reflect Vite (was Create React App).
+- `src/api/cutomers/` renamed to `src/api/customers/` (folder typo).
+
+#### Fixed
+
+- Plop `documentation-page` template emitted invalid `\{` tokens in three places; corrected so generated pages compile.
+
+---
+
+## 0.1.1
+
+The current shipping snapshot.
+
+#### Added
+
+- **Assessments module** — list, details, queue, and dashboard. Demonstrates the workflow pattern with statuses, findings, evidence requests, and decisions. See [Modules → Assessments](/modules/assessments).
+- **Customers module** — both client-side (`listCustomers`) and server-side (`serverSideList`) table strategies, plus segments as saved filters. See [Modules → Customers](/modules/customers).
+- **Accounts module** — users, roles, and abilities with the ability matrix UI. See [Modules → Accounts](/modules/accounts).
+- **Settings module** — General settings for language, theme, sidebar mode, developer debug translations, plus Feature Flags toggle UI. See [Modules → Settings](/modules/settings).
+- **Profile module** — name and email, avatar with crop, password change. See [Modules → Profile](/modules/profile).
+- **Auth module** — sign in, sign up, send password. See [Modules → Auth](/modules/auth).
+- **Dashboards** — Application and Assessments dashboards with KPI rows and `@nivo` charts. See [UI Patterns → Dashboards](/ui-patterns/dashboards).
+- **Component library** — ~40 shared components and showcase pages under `/core-components` and `/mui-components`. See [Components](/design-system/components).
+- **Light and dark themes** with runtime switching. See [Theme](/customization/theme).
+- **i18n** — English and Ukrainian, runtime locale switch.
+- **MDX docs system** — `MDXDoc` + `MDXDocAnchors` for the in-app documentation rendering.
+
+---
+
+## Versioning
+
+Coreola follows [SemVer](https://semver.org/):
+
+- **Major (1.x.0)** — breaking changes to the surface (route shape, model-hook contracts, public component APIs, theme tokens with names like `palette.color.chart`).
+- **Minor (0.x.0)** — new features added without removing existing ones.
+- **Patch (0.x.y)** — fixes that do not change the surface.
+
+Before 1.0, treat **minor** as potentially breaking — the surface is still solidifying.
+
+---
+
+## Upgrading your fork
+
+Most teams fork Coreola once and evolve it. There is no official "upgrade" mechanism — merging upstream changes is a manual reconciliation.
+
+A pragmatic workflow:
+
+1. Keep a `coreola-upstream` remote pointing at the original Coreola repo.
+2. Cherry-pick or merge specific commits/PRs you want.
+3. Resolve conflicts in your fork's branding, routes, and feature modules.
+4. Run `npm run build`, `npm run lint`, `npm test`, and the UI smoke tests.
+
+For larger upstream changes (a new pattern, a refactor of a primitive), consider doing the same change yourself rather than merging — it lets you keep the diff smaller and your fork's narrative cleaner.
+
+---
+
+## Tracking what is breaking
+
+When a Coreola release is marked breaking, the changelog entry includes:
+
+- **What broke** — the old shape and the new one.
+- **Why** — the reason for the change (often a bug or a tighter contract).
+- **Migration** — a code-level recipe for adapters.
+
+If you ship Coreola as a product foundation to multiple internal teams, mirror this discipline in your own changelog.
+
+---
+
+## Reporting issues
+
+If you find a bug or have a suggestion for the Coreola template itself, file it against the Coreola repository. Bugs in your fork stay in your fork's tracker.
+
+---
+
+## Next steps
+
+- [Architecture](/overview/architecture) — the surfaces this changelog tracks
+- [Adding a New Module](/customization/adding-new-module) — the place most of your fork's diffs live

@@ -1,0 +1,199 @@
+# API Layer
+
+Coreola's API layer is **RTK Query slices on top of a shared base query**. The shared base query handles authentication, request tracking, centralized error notifications, and pagination normalization. Each slice declares endpoints and tags.
+
+- Source: `src/api/<resource>/`, `src/helpers/baseQuery.ts`
+- Library: `@reduxjs/toolkit/query/react`
+
+---
+
+## The shared base query
+
+`src/helpers/baseQuery.ts` exposes `getBaseQuery(path, targetAPI)` — a factory that returns an RTK Query `BaseQueryFn`. Every API slice in Coreola uses it.
+
+```ts
+const getBaseQuery = (path: string, targetAPI = 'SYSTEM_API'): AppBaseQuery => { ... };
+```
+
+#### What it does
+
+1. **Resolves the base URL** — `settings.API[targetAPI] + path`, where `targetAPI` is either `'SYSTEM_API'` or `'MOCKUP_API'`. The URLs come from `.env.local`.
+2. **Sets `Content-Type: application/json`** and the bearer token from the user slice.
+3. **Tracks in-flight requests** — dispatches `incrementActiveRequestsCount` before, `decrementActiveRequestsCount` after. Components can subscribe to `getActiveRequestsCount` to show a global loader.
+4. **Surfaces errors as snackbars** — on `error.status !== 401`, calls `snackActions.error(message)` with a translated phrase. On `401`, dispatches `setCheckTime()` to trigger token re-validation.
+5. **Normalizes pagination for the mock backend** — if the response is an array, wraps it in `{ items, pagination }` using `X-Total-Count` and the `_page` / `_limit` query parameters.
+
+The pagination normalization is **only useful with json-server**. Real APIs typically already return `{ items, pagination }` (or similar). Once you migrate to a real backend, that block becomes a no-op for non-array responses.
+
+---
+
+## Two API targets
+
+Coreola supports running against two backends simultaneously:
+
+| Key            | `.env.local`                     | Used by                              |
+|----------------|----------------------------------|--------------------------------------|
+| `SYSTEM_API`   | `VITE_APP_SYSTEM_API_URL`        | Production endpoints                 |
+| `MOCKUP_API`   | `VITE_APP_MOCKUP_API_URL`        | Mock endpoints (json-server)         |
+
+Each API slice picks its target via the second argument to `getBaseQuery`:
+
+```ts
+baseQuery: getBaseQuery('/assessments', 'MOCKUP_API'),
+```
+
+In a fresh checkout, every slice points to `MOCKUP_API`. Migrating a feature to a real backend is **change the `targetAPI`** for that one slice — no other code changes needed.
+
+See [Environment](/getting-started/environment) for the variable reference.
+
+---
+
+## Anatomy of an API slice
+
+A typical slice in `src/api/<resource>/`:
+
+```
+<resource>/
+├─ <resource>.api.ts     # createApi — endpoints, tags, transformResponse
+├─ <resource>.hooks.ts   # Mapped wrappers, derived hooks
+└─ <resource>.types.ts   # Request and response types
+```
+
+#### `<resource>.api.ts`
+
+```
+createApi({
+  reducerPath: 'assessmentsApi',
+  baseQuery: getBaseQuery('/assessments', 'MOCKUP_API'),
+  tagTypes: ['Assessment', 'Findings', 'Evidence'],
+  endpoints: (builder) => ({
+    getAssessments: builder.query<AssessmentsResponse, AssessmentsPayload>({
+      query: (params) => ({ url: '', params }),
+      providesTags: (result) =>
+        result
+          ? [...result.items.map(({ id }) => ({ type: 'Assessment' as const, id })),
+              { type: 'Assessment', id: 'LIST' }]
+          : [{ type: 'Assessment', id: 'LIST' }],
+    }),
+    updateAssessment: builder.mutation<Assessment, UpdateAssessmentInput>({
+      query: ({ id, ...patch }) => ({ url: `/${id}`, method: 'PUT', body: patch }),
+      invalidatesTags: (_res, _err, { id }) => [{ type: 'Assessment', id }],
+    }),
+    // ...
+  }),
+})
+```
+
+Each endpoint is **either a `query` or a `mutation`**. Queries cache by argument; mutations invalidate tags so dependent queries refetch.
+
+#### `<resource>.hooks.ts`
+
+The `Mapped` variants normalize the server shape:
+
+```ts
+export const useGetAssessmentsQueryMapped = (params, options) => {
+  const result = useGetAssessmentsQuery(params, options);
+  return useMemo(
+    () => ({ ...result, items: mapAssessments(result.data?.items) }),
+    [result],
+  );
+};
+```
+
+Views always import `Mapped` hooks. The raw ones exist for cases where the un-normalized shape is what you want.
+
+#### `<resource>.types.ts`
+
+Type definitions for inputs, outputs, and the mapped UI shapes. Keep these next to the slice — they read together.
+
+---
+
+## Centralized error handling
+
+`baseQuery` is where 90% of error handling lives. The flow on a failed mutation:
+
+1. RTK Query receives the error response.
+2. `baseQuery` checks `error.status`:
+   - **401** → dispatches `setCheckTime()` — the user-slice middleware re-validates the token and may force re-auth.
+   - **Anything else** → reads `error.data` (or `error.error` or `error.status` as a string), runs it through `phrase(i18n.t('error', ...))`, and calls `snackActions.error(translated)`.
+3. The mutation's promise rejects with the error; the caller can choose to handle it.
+
+This means **feature code does not need to write `try/catch` for the snackbar**. The base query already showed it. Feature code uses `try/catch` only for follow-up logic (e.g., resetting a form after a successful save).
+
+For form-level errors (server validation per field), the response is mapped via `useFieldsFromError` — see [Forms](/ui-patterns/forms).
+
+---
+
+## Active-requests tracking
+
+Every base-query call increments the counter, every response decrements it. Components that need a "something is happening" indicator subscribe to `getActiveRequestsCount`:
+
+```ts
+const count = useSelector(getActiveRequestsCount);
+return count > 0 ? <LinearProgress /> : null;
+```
+
+The default Coreola layout does **not** render a global top-of-page progress bar — per-component skeletons are preferred. The counter is still available if you want a global one in a fork.
+
+---
+
+## Pagination normalization
+
+For `MOCKUP_API` calls that return arrays, `baseQuery` rewrites the response:
+
+```ts
+// Input from json-server
+[ {...}, {...}, {...} ]  // plus X-Total-Count header
+
+// Output exposed to RTK Query
+{
+  items: [ {...}, {...}, {...} ],
+  pagination: { page, limit, pages, total, items },
+}
+```
+
+The pagination metadata is what `useServerPaginatedTable` consumes. This is why the table works seamlessly against json-server even though json-server itself does not understand pagination — the base query translates.
+
+A real backend should return the same shape directly. Set `SYSTEM_API` on a slice and the array-wrapping branch falls through (non-array responses pass through unchanged).
+
+---
+
+## Choosing endpoint signatures
+
+Conventions across the slices:
+
+- **Query payloads** are objects, not positional args, so future fields are additive.
+- **Mutations take the full new shape** (or a patch with `id`), not URL params.
+- **`transformResponse`** is used only when the server shape is structurally different from what UI needs. Cosmetic mapping (renaming a field, computing a derived value) goes in the `Mapped` hook so the cache stays in the raw shape.
+- **Tags** use a `type + id` pair for granular invalidation; a list tag uses `id: 'LIST'` so list queries can be invalidated without touching detail queries.
+
+---
+
+## Adding a new endpoint
+
+To an existing slice:
+
+1. Add the endpoint to `endpoints: (builder) => ({ ... })`.
+2. Declare `providesTags` / `invalidatesTags` so dependent queries refetch.
+3. If the server shape differs from the UI shape, add a `Mapped` wrapper in `<resource>.hooks.ts`.
+4. Done — RTK Query generates the hook automatically (`useNewEndpointQuery` / `useNewEndpointMutation`).
+
+To add a **whole new slice**, see [State Management → Adding an RTK Query slice](/development/state-management).
+
+---
+
+## Anti-patterns
+
+- **Hand-rolling `fetch` calls inside a model hook.** Use RTK Query — caching, dedup, and the snackbar wiring come for free.
+- **Showing your own error snackbar for an RTK Query error.** `baseQuery` already did. Adding a second one is duplication.
+- **Skipping `invalidatesTags`**. The cache will be stale after the mutation; users see old data until a hard refresh.
+- **Reading the raw response inside the view.** Use `Mapped` hooks. Views should not know about server shape.
+- **Hard-coding URLs in `query: { url: 'http://...' }`.** Always go through `targetAPI` so `.env.local` controls routing.
+
+---
+
+## Next steps
+
+- [Mock Backend](/development/mock-backend) — what `MOCKUP_API` points at and how to extend it
+- [State Management](/development/state-management) — where RTK Query slices fit in the store
+- [Forms](/ui-patterns/forms) — `useFieldsFromError` for per-field server errors

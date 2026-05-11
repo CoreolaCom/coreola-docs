@@ -1,0 +1,202 @@
+# Permissions
+
+Coreola's RBAC system has two complementary mechanisms:
+
+- **Abilities** — per-user permissions checked everywhere (routes, components, mutations).
+- **Feature flags** — per-environment toggles checked the same way.
+
+Both are implemented with **CASL** for the ability layer and a simple map for feature flags. This page is the customization-side companion to [Accounts](/modules/accounts) and [Settings → Feature Flags](/modules/settings).
+
+- Source: `src/helpers/rbac.ts`, `src/hooks/useAbility.ts`, `src/hooks/useFeatureFlag.ts`
+- API: `src/api/abilities/`, `src/api/roles/`, `src/api/features/`
+- Library: `@casl/ability` 6.x
+
+---
+
+## The ability model
+
+A user's permissions arrive at sign-in as an **ability matrix** on the user record:
+
+```ts
+user.abilities = {
+  assessment: { read: true,  create: true,  update: true,  delete: false },
+  customer:   { read: true,  create: false, update: false, delete: false },
+  // ... one entry per resource
+}
+```
+
+This shape is the **flattened union of the user's roles**. The backend produces it; the frontend consumes it.
+
+`buildAbilityFromMatrix` (in `src/helpers/rbac.ts`) converts the matrix into a CASL `Ability` instance:
+
+```ts
+const ability = buildAbilityFromMatrix(user.abilities);
+ability.can('read', 'assessment');   // true
+ability.can('delete', 'assessment'); // false
+```
+
+The instance lives behind `useAbility()` — most code does not see CASL directly.
+
+---
+
+## Three places permissions are checked
+
+#### Route filtering
+
+`routes.ts` entries declare requirements:
+
+```ts
+{
+  path: 'assessments',
+  abilityCan: ['assessment.read'],
+  featureFlagCan: ['assessments_module'],
+  ...
+}
+```
+
+- `abilityCan: ['assessment.read']` means "the user needs the `read` action on `assessment`".
+- `featureFlagCan: ['assessments_module']` means "the `assessments_module` flag must be enabled".
+- Both arrays are **AND** — all entries must pass.
+
+`filterRoutesByAbility` (in `rbac.ts`) prunes the route tree. The router builder calls it; the menu builder (`useGetMenuTree`) calls it; the index-redirect resolver calls it. **Three call sites, one rule** — a forbidden route never appears anywhere.
+
+#### Component-level checks
+
+Inside components, use `useAbility`:
+
+```tsx
+import useAbility from 'hooks/useAbility';
+
+const ability = useAbility();
+if (!ability.can('update', 'assessment')) return null;
+
+return <Button onClick={onEdit}>Edit</Button>;
+```
+
+The CASL semantics — `can(action, subject)` returns boolean — should be the only API you reach for in components.
+
+#### Feature flag checks
+
+For boolean gates, use `useFeatureFlag`:
+
+```tsx
+import useFeatureFlag from 'hooks/useFeatureFlag';
+
+const canExport = useFeatureFlag('export');
+return canExport ? <ExportButton /> : null;
+```
+
+`useFeatureFlag(key)` returns a boolean and re-renders the component when the flag changes — useful for the toggle-and-immediately-see-the-effect workflow in `/application/settings/feature-flags`.
+
+---
+
+## Hidden vs disabled
+
+A core Coreola convention: when a user lacks permission for a control, **hide** it. Do not render it disabled.
+
+Reasons:
+
+- A disabled control invites questions ("why can't I use this?").
+- Hiding follows the principle of least surprise — if the user cannot do it, they should not see it.
+- It produces cleaner screenshots for support.
+
+The exception is when the control is needed for **discovery** — a user should know the feature exists even if they cannot perform it yet (e.g., gated trial features). For that, prefer a separate empty-state with a "request access" affordance.
+
+---
+
+## Defining a new ability
+
+The flow for shipping a new permission:
+
+1. **Backend** — add the ability key (e.g., `audit`) to your ability service.
+2. **Mock backend** — add an `Ability` record in `json-server/data/api/abilities.json` (or the equivalent fixture).
+3. **Roles** — add the ability column to relevant roles in `json-server/data/api/roles.json`. The matrix shape is `{ audit: { read: true, create: false, update: false, delete: false } }`.
+4. **Frontend route gate** — annotate the new route(s) with `abilityCan: ['audit.read']`.
+5. **Frontend component gate** — use `useAbility().can('read', 'audit')` in any component that needs in-page checks.
+
+No code changes are required to `rbac.ts` or `useAbility` — they consume the matrix generically.
+
+---
+
+## CASL specifics
+
+#### `can` syntax
+
+```ts
+ability.can(action, subject)
+```
+
+`action` is one of `'read' | 'create' | 'update' | 'delete'`. `subject` is the resource key.
+
+For per-record checks (e.g., "can update this specific assessment"), CASL supports subject-level conditions. The current implementation uses bare subject strings — extend it if you need attribute-based access control.
+
+#### `cannot` for forbidding actions
+
+Coreola only models **positive** permissions. If you need explicit `cannot` rules (e.g., "manager can update everything **except** budgets"), extend `buildAbilityFromMatrix` to emit `cannot` rules from the matrix.
+
+#### Ability changes mid-session
+
+Most permission changes happen at sign-in. If you need to react to a change without re-signing (e.g., admin grants the user a new role during the session), refetch the user and re-build the ability by dispatching `setUserInfo(updatedUser)`. The `user.slice` change re-renders consumers of `useAbility`.
+
+In practice, this is rare. Most teams accept that permission changes apply on next sign-in.
+
+---
+
+## Feature flags vs abilities
+
+Two superficially similar mechanisms; **do not mix them**:
+
+| Flags                                                  | Abilities                                          |
+|--------------------------------------------------------|----------------------------------------------------|
+| Per-environment                                        | Per-user                                           |
+| Toggle a feature on/off for everyone                   | Grant a user the right to perform an action        |
+| Lifecycle: short-lived, removed when feature is stable | Lifecycle: permanent, tied to the resource         |
+| Set via `/application/settings/feature-flags`          | Set via roles in `/application/accounts/roles`     |
+| Checked via `useFeatureFlag`                           | Checked via `useAbility`                           |
+| Stored in `featuresApi` cache                          | Stored on the `user` slice (matrix)                |
+
+Both can gate the same route via `featureFlagCan` and `abilityCan`. Use both when **the feature must be enabled AND the user must have permission** — for example, an export feature behind a flag that only admins can use.
+
+---
+
+## Defense in depth
+
+The frontend gates routes and components. The **backend must still enforce permissions on every mutation** — frontend gating is for UX, not security. A user with the dev tools open can call any endpoint; only the backend can refuse.
+
+The convention: frontend hides, backend enforces. Coreola's tests should treat each as independent.
+
+---
+
+## Anti-patterns
+
+- **Hardcoding role names.** Always check abilities, not roles. `user.roles.includes('admin')` is fragile; `ability.can('manage', 'role')` is not.
+- **Bypassing CASL with raw matrix reads.** `user.abilities.assessment.update` works today; the day someone changes the shape, it breaks. Use `useAbility`.
+- **Adding `try/catch` around forbidden mutations to "handle" 403.** If a user can fire the mutation, the gate is missing. Hide the control.
+- **Treating feature flags as permissions.** A flag is environment state. A permission is user state. The audiences for changing them are different.
+- **Mixing route-level and component-level checks inconsistently.** If you gate a route with `abilityCan`, do not also write an in-page check that contradicts it.
+
+---
+
+## Adapting to a different RBAC model
+
+Coreola's model is intentionally simple. Common extensions:
+
+#### Attribute-based access control
+
+Add conditions to the matrix (e.g., "can update assessment if `owner_id === user.id`"). Modify `buildAbilityFromMatrix` to emit CASL rules with `conditions`. Then `ability.can('update', assessment)` resolves per-record.
+
+#### External identity provider
+
+The matrix can be a claim on the OIDC token rather than a separate endpoint. The frontend code stays the same — only the source of `user.abilities` changes.
+
+#### Group-based access
+
+Treat groups like roles. The matrix is still the flattened union; group membership is a backend concern.
+
+---
+
+## Next steps
+
+- [Accounts](/modules/accounts) — the admin UI for managing users/roles/abilities
+- [Settings](/modules/settings) — feature flag management
+- [Routing](/development/routing) — `abilityCan` and `featureFlagCan` in the route config

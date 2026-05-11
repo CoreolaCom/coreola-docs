@@ -1,0 +1,229 @@
+# Forms
+
+Coreola standardizes on **react-hook-form** for form state and **yup** for validation. Every form in the app — sign in, sign up, profile edits, assessment dialogs, settings — uses the same pattern.
+
+The benefit: a developer who has read one Coreola form can read all of them. The cost: a single small ceremony when writing a new form.
+
+---
+
+## The canonical pattern
+
+A Coreola form looks like this:
+
+```ts
+import { useForm } from 'react-hook-form';
+import { yupResolver } from '@hookform/resolvers/yup';
+import * as yup from 'yup';
+
+const schema = yup.object({
+  email: yup.string().email('Invalid email').required('Required'),
+  password: yup.string().min(4, 'Min 4 chars').required('Required'),
+}).required();
+
+const { register, handleSubmit, formState: { errors }, watch } = useForm<FormValues>({
+  resolver: yupResolver(schema),
+  defaultValues: { email: '', password: '' },
+});
+```
+
+Then in the view:
+
+```tsx
+<form onSubmit={handleSubmit(onSubmit)}>
+  <TextField {...register('email')} error={!!errors.email} helperText={errors.email?.message} />
+  <TextField type="password" {...register('password')} error={!!errors.password} helperText={errors.password?.message} />
+  <Button type="submit">Sign in</Button>
+</form>
+```
+
+That is the entire pattern. Everything else builds on it.
+
+---
+
+## Where forms live
+
+Forms in Coreola almost always sit inside a **model hook**, not a view component. The hook owns:
+
+- The schema and its `useForm` call.
+- The submit handler that calls an RTK Query mutation.
+- The `useFieldsFromError` mapping for server-side validation errors.
+
+The view consumes `register`, `errors`, and the bound submit handler. This keeps views render-only and lets the model handle async logic.
+
+A real example: `src/features/user/profile/password/hooks/usePasswordViewModel.tsx`.
+
+---
+
+## Validation philosophy
+
+Validation lives in the yup schema only. Rules:
+
+- **All client-side validation is yup.** Do not write ad-hoc `if (!value)` checks in submit handlers.
+- **Messages are translated.** Use `tForm('This field is required')` or similar, not raw strings.
+- **Cross-field rules use `yup.ref`** — e.g., `yup.string().oneOf([yup.ref('password')], tForm('Passwords must match'))`.
+- **Server errors are mapped separately** (see below) — they are not validation, they are reconciliation.
+
+The full schema for a password change form, from `usePasswordViewModel.tsx`:
+
+```ts
+const schema = yup.object({
+  email: yup.string().email(tForm('Invalid email')).required(),
+  passwordOld: yup.string().required(tForm('This field is required')),
+  password: yup
+    .string()
+    .required()
+    .min(4)
+    .notOneOf([yup.ref('passwordOld')], tForm('Must differ from current')),
+  passwordRepeat: yup.string().oneOf([yup.ref('password')], tForm('Must match')),
+}).required();
+```
+
+---
+
+## Mapping server-side errors
+
+Server validation (e.g., "email already in use") arrives as part of the RTK Query error response. Coreola has a helper for translating those into per-field error states:
+
+```ts
+import useFieldsFromError from 'hooks/useFieldsFromError';
+
+const errorFields = useFieldsFromError(errors, watch());
+```
+
+`useFieldsFromError` returns a record `{ <fieldName>: { error: boolean, helperText: string } }`. Spread it onto MUI inputs:
+
+```tsx
+<TextField {...register('email')} {...errorFields.email} />
+```
+
+Now the input shows the yup error if there is one, **or** the server error if not — without duplicating logic in the view. The pure function `fieldsFromError` (in `src/helpers/fieldsFromError.ts`) does the same thing without React.
+
+---
+
+## Inputs to use
+
+For consistency, prefer Coreola's input wrappers over the raw MUI primitives:
+
+| Need                            | Use                       |
+|---------------------------------|---------------------------|
+| Free-text input                 | `TextField` (`src/components/textField/`) |
+| Phone number                    | `PhoneInput` (`src/components/phoneInput/`) |
+| Search field                    | `SearchInput`             |
+| Image picker with crop          | `EditImage`               |
+| Date / date range               | `DatePicker`              |
+| Inline-editable single field    | `EditableField`           |
+| Tri-state toggle                | `ToggleInput`             |
+
+The Coreola wrappers ensure consistent helper-text rendering, error icon, and theme-aware styling. They also play nicely with `register` and `Controller` from react-hook-form.
+
+---
+
+## Register vs Controller
+
+Two ways to bind a field:
+
+#### `register`
+
+For uncontrolled inputs (most MUI text inputs):
+
+```tsx
+<TextField {...register('email')} />
+```
+
+Lighter, no re-render on each keystroke.
+
+#### `Controller`
+
+For inputs that need a controlled value or non-standard event shape (`Select`, custom date pickers, `PhoneInput` with masks):
+
+```tsx
+<Controller
+  name="phone"
+  control={control}
+  render={({ field, fieldState }) => (
+    <PhoneInput {...field} error={!!fieldState.error} helperText={fieldState.error?.message} />
+  )}
+/>
+```
+
+When in doubt, try `register` first. Switch to `Controller` if you need access to a value setter or have a controlled-only input.
+
+---
+
+## Default values and resets
+
+Always set `defaultValues` — even an empty object. react-hook-form's "uncontrolled until first change" behavior is convenient but interacts poorly with conditional fields if defaults are not declared.
+
+Reset when:
+
+- The form is part of a dialog that may re-open with different initial data — call `reset(newDefaults)` in the effect that opens the dialog.
+- A successful submission should clear the form — call `reset()` after `unwrap()`.
+
+---
+
+## Submit handlers
+
+Submission lives in the model hook. The shape is:
+
+```ts
+const onSubmit = handleSubmit(async (values) => {
+  try {
+    await updatePassword(values).unwrap();
+    snackActions.success(tForm('Password updated'));
+    reset();
+  } catch {
+    // Errors are surfaced via baseQuery snackbar + useFieldsFromError per-field
+  }
+});
+```
+
+Two notes:
+
+1. Errors are intentionally swallowed by `try/catch` — the RTK Query base query already shows a snackbar and the field-level errors are wired through `useFieldsFromError`.
+2. Success snackbars are explicit. Always confirm a successful mutation.
+
+---
+
+## Disabled states
+
+Disable the submit button while a mutation is in flight, never the inputs themselves:
+
+```tsx
+<Button type="submit" disabled={isLoading} loading={isLoading}>
+  Save
+</Button>
+```
+
+Disabled inputs lose focus, lose accessibility affordances, and make the form feel broken. Disabled submit only is the standard.
+
+---
+
+## Dirty-state warnings
+
+For long forms where users might lose work, use the existing `dirtyData.ts` helper plus a navigation guard. The pattern is:
+
+```ts
+import { hasDirtyData } from 'helpers/dirtyData';
+
+const isDirty = hasDirtyData(watch(), defaults);
+```
+
+Wire `isDirty` to either a `beforeunload` listener or a `ConfirmDialog` triggered by the navigation hook. Used in the user profile edit flows.
+
+---
+
+## Anti-patterns
+
+- **Storing form state in Redux**. react-hook-form keeps form state local on purpose — keystrokes do not need to round-trip the store.
+- **Bypassing yup with hand-rolled validation**. Once a form has two paths to validation, future you will only update one.
+- **Showing both a global toast and a field error for the same problem**. Pick one source — field errors win for validation; toasts win for everything else.
+- **Inline `<input>` elements**. Use the MUI/Coreola wrappers so theming and a11y are not your problem.
+- **Submit handlers that show their own success snackbar AND let the API success path show one too**. Pick one place.
+
+---
+
+## Next steps
+
+- [Notifications](/ui-patterns/notifications) — `snackActions` for success and error toasts
+- [Components](/design-system/components) — the input component inventory
+- [API Layer](/development/api-layer) — how mutations and error handling are wired

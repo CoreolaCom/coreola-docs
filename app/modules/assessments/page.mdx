@@ -1,0 +1,224 @@
+# Assessments
+
+The assessments module is Coreola's canonical workflow example. It demonstrates a real operational pattern — items with statuses, side resources, ownership, and a decision flow — built on the same primitives the rest of the app uses.
+
+Treat it as the reference implementation when building your own workflow module.
+
+- Source: `src/features/collections/assessments/`
+- API: `src/api/assessments/`
+- Routes: `/collections/assessments/list`, `/collections/assessments/details/:assessmentId?/:resource?/:resourceId?`, `/collections/assessments/queue`
+- Dashboard: `/dashboards/assessments`
+
+---
+
+## Sub-modules
+
+```
+assessments/
+├─ list/      # Catalog view — full table of all assessments
+├─ details/   # Single assessment with cards (overview, findings, evidence, activity)
+└─ queue/     # Operational table filtered by queue section
+```
+
+Each is a Coreola page in its own right with its own model hook.
+
+---
+
+## Domain entities
+
+From `src/api/assessments/assessments.types.ts`:
+
+#### `Assessment`
+
+The primary entity. Key fields:
+
+- `id`, `key` (human-readable id), `title`, `type`, `framework`
+- `status` — workflow status (e.g., `needs_review`, `waiting_for_evidence`, `remediation_in_progress`, `blocked`, `overdue`, `closed`)
+- `priority`, `risk_level`, `decision`
+- `owner`, `reviewer`, `customer` — related entities
+- `findings_count`, `evidence_requests_count`
+- `due_date`, `tags`, `control_sets`
+
+#### `AssessmentFinding`
+
+A finding raised against an assessment.
+
+- `id`, `assessment_id`, `title`, `category`
+- `severity`, `status` (`open` / `in_progress` / `resolved` / `closed`)
+- `owner_id`, `due_date`
+
+#### `EvidenceRequest`
+
+A request for supporting documentation.
+
+- `id`, `assessment_id`, `title`
+- `status` (`requested` / `in_review` / `received` / `rejected`)
+- `recipient_id`, `due_date`, `file_count`
+
+#### `AssessmentActivity`
+
+The audit/timeline entry.
+
+- `id`, `assessment_id`, `type` (`created`, `submitted`, `evidence_requested`, …)
+- `actor_name`, `message`, `created_at`
+
+These four entities — main + sub-resources + activity — are the **shape** of an admin workflow module. Most domains map onto something similar.
+
+---
+
+## List view
+
+#### Route
+
+`/collections/assessments/list`
+
+#### Model hook
+
+`useListModel` in `features/collections/assessments/list/hooks/`. Responsibilities:
+
+- Manages a server-paginated table with `id: 'assessments-list'`.
+- Calls `useGetAssessmentsQueryMapped(queryParams, { skip: !isHydrated })`.
+- Builds filter config via `useAssessmentFilters` (status, priority, owner, …).
+- Exposes `exportAllRows` via `useExportAllRows` for CSV export.
+
+#### View
+
+Standard `Table` component + filter chips + per-row click to navigate to details. Pattern matches [Tables](/ui-patterns/tables).
+
+---
+
+## Queue view
+
+#### Route
+
+`/collections/assessments/queue`
+
+The queue is the operator's working view: a server-paginated table focused by one queue slice at a time. An operator picks the queue slice from the table filters and scans the resulting worklist.
+
+#### Queue slices
+
+`useQueueModel` adds a persistent radio filter named `queue_section` with these slices:
+
+- `needs_review`
+- `waiting_for_evidence`
+- `remediation_in_progress`
+- `blocked`
+- `overdue`
+
+The selected slice is converted into assessment query params (`status_values` or `is_overdue`) and combined with the normal assessment filters for risk, owner, customer, and search.
+
+#### Table and actions
+
+The view renders:
+
+- `StatsLine` with counts for every queue slice.
+- The shared `Table` component with server pagination, search, filters, custom columns, CSV export, and row click navigation.
+- An `ActionMenu` per row.
+
+Row actions:
+
+- **View**: navigate to `/collections/assessments/details/:assessmentId`.
+- **Assign owner**: `AssignOwnerDialogView` with user autocomplete.
+- **Request evidence**: `RequestEvidenceDialogView`.
+- **Change status**: `ChangeStatusDialogView`.
+- **Submit decision**: `SubmitDecisionDialogView`.
+
+Dialog state is owned by `useQueueModel`; mutation form state is owned by `useUpdateAssessmentAction` and `useEvidenceRequest`. The pattern mirrors [Details Pages](/ui-patterns/details-pages).
+
+#### Stats
+
+`useGetAssessmentsStatsQuery` returns per-slice counts independently from the table query, so the queue can refresh stats without replacing the current page of rows. The card title follows the active slice, e.g. `Assessment queue: Remediation in progress`.
+
+---
+
+## Details view
+
+The details page is documented in depth at [UI Patterns → Details Pages](/ui-patterns/details-pages). A quick recap of what is unique to assessments:
+
+#### Card stack
+
+- `OverviewCardView` — title, status, owner, dates, key-value metadata (toggleable edit mode)
+- `DecisionCardView` — the workflow controls (submit decision, change status)
+- `FindingsCardView` — sub-table of findings with row actions
+- `EvidenceCardView` — sub-table of evidence requests with row actions
+- `ActivityCardView` — timeline of `AssessmentActivity` events
+
+#### Deep linking to sub-resources
+
+The route is parameterized:
+
+```
+/collections/assessments/details/:assessmentId?/:resource?/:resourceId?
+```
+
+with `resource` constrained to `'finding' | 'evidence'` (declared in `routes.ts` via the `values` field). So `/collections/assessments/details/123/finding/456` deep-links to finding 456 inside assessment 123.
+
+#### Sub-resource dialogs
+
+- `NewFindingDialogView` — create a finding
+- `RequestEvidenceDialogView` — request evidence from a recipient
+- `AssignFindingOwnerDialogView`
+- `ChangeFindingStatusDialogView`
+- `ChangeEvidenceStatusDialogView`
+- `OverviewCardEditModeView` — multi-field edit
+
+The model hook composes per-action sub-hooks (`useCreateFinding`, `useEvidenceRequest`, `useAssignFindingOwner`, …) so each concern stays small.
+
+---
+
+## Assessments dashboard
+
+#### Route
+
+`/dashboards/assessments`
+
+A KPI-and-charts view aggregating across all assessments. Same shape as the [Application dashboard](/ui-patterns/dashboards) — KPI row, charts, supporting cards.
+
+The view model fetches a single aggregated endpoint with `pollInterval: 60` and exposes derived series.
+
+---
+
+## State transitions — where they live
+
+The status enum is enforced on the backend, not the frontend. The UI:
+
+- **Reads** the available `status_options` from the `meta` endpoint (`useGetAssessmentsMetaQuery`).
+- **Renders** the current status with `Status`.
+- **Triggers** a transition via `useUpdateAssessmentStatus` (or `useUpdateFindingStatus`, `useUpdateEvidenceStatus` for sub-resources).
+- **Refetches** thanks to RTK Query tag invalidation.
+
+The same pattern applies to decisions. The decision flow is **mostly a backend concern** — the frontend submits and reflects.
+
+---
+
+## Permissions
+
+Assessment routes are gated by `abilityCan: ['assessment.read']` at the collection level. Mutations check:
+
+- `assessment.update` — for edit
+- `assessment.create` — for new finding / new evidence request (sub-resources inherit the parent's create ability in this implementation)
+- `assessment.delete` — for archive / remove
+
+Buttons that the user is not allowed to use are **hidden**, not disabled — see [Principles → Consistent feedback](/design-system/principles).
+
+---
+
+## How to fork this module for your domain
+
+If your product has a similar workflow (claims, tickets, applications, audits), you can fork the assessments module:
+
+1. Rename the entity (`Assessment` → `<YourEntity>`).
+2. Adjust the API slice (`src/api/<yourEntity>/`).
+3. Rename the routes and the feature folder.
+4. Adjust the card composition: drop cards you do not need, add domain-specific ones.
+5. Keep the queue concept if your workflow has natural sections; drop it if not.
+
+The conventions — model hook + views + sub-hooks + URL-driven sub-resource params — transfer 1:1.
+
+---
+
+## Next steps
+
+- [Details Pages](/ui-patterns/details-pages) — the deep dive on the card-stack pattern
+- [Tables](/ui-patterns/tables) — the list view's table
+- [Adding a New Module](/customization/adding-new-module) — the step-by-step recipe for cloning this shape

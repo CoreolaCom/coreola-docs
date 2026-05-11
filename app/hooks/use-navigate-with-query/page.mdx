@@ -1,0 +1,14 @@
+# `useNavigateWithQuery`
+
+Returns a `NavigateFunction` that automatically appends the current query string to any target path.
+
+```ts
+useNavigateWithQuery(): NavigateFunction
+```
+
+**Returns** — A memoized `NavigateFunction` compatible with React Router v6.
+
+**Use when** — Navigating between filtered list views, paginated tables, or any URL-state-aware page.
+
+- Source: `src/hooks/useNavigateWithQuery.ts`
+- Import: `import useNavigateWithQuery from 'hooks/useNavigateWithQuery'`

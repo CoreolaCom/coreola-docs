@@ -1,0 +1,159 @@
+# Layouts
+
+Coreola has four layout components in `src/layouts/`. Three are page shells (`AuthLayout`, `DashboardLayout`, `Toolbar`) and one is a sub-shell (`VerticalTabs`) used inside section roots.
+
+This page describes what each does and where it is used.
+
+---
+
+## `AuthLayout` — public auth pages
+
+- Source: `src/layouts/authLayout/AuthLayout.tsx`
+- Wraps: `/auth/sign-in`, `/auth/sign-up`, `/auth/send-password`
+- Registered in `routes.ts` via `importUrl: 'layouts/authLayout/AuthLayout'`
+
+#### What it renders
+
+- A centered card with the Coreola logo and product title.
+- `LanguageSwitch` and `ThemeSwitch` in the corners so the user can adjust before signing in.
+- A top-of-card `LinearProgress` driven by `app.activeRequestsCount`.
+- The child auth page (Sign In / Sign Up / Send Password) as `<Outlet />`.
+
+#### Auto-logout safeguard
+
+If the user navigates to an `/auth/*` route while a valid session token is still in the user slice, `AuthLayout` triggers a logout dispatch and shows a brief "Signing out" state. This prevents a logged-in user from accidentally re-entering the auth flow with an existing session.
+
+#### Max width
+
+Each auth page can override the container width via a `maxWidth` prop (default `'xs'`). Sign-up needs a wider container than sign-in — that is the variability the prop covers.
+
+---
+
+## `DashboardLayout` — authenticated app shell
+
+- Source: `src/layouts/dashboardLayout/DashboardLayout.tsx`
+- Wraps: every authenticated route — `/dashboards/*`, `/collections/*`, `/core-components/*`, `/mui-components/*`, `/documentation/*`, `/application/*`, `/user/*`, the root index.
+
+#### Composition
+
+```
+DashboardLayout
+├─ Sidebar         (navigation)
+├─ Header          (logo, search, theme/language switches, user menu, bell)
+├─ Notifications   (slide-in drawer driven by app.notificationsOpen)
+└─ MainContent     (<Outlet /> for the active route)
+```
+
+Each piece is a sibling folder under `src/layouts/dashboardLayout/`:
+
+- `header/` — top bar including `Search` (`api/search`), `ThemeSwitch`, `LanguageSwitch`, the notification bell, and the user menu.
+- `sidebar/` — vertical nav built from `useGetMenuTree(routes)`, filtered by abilities and feature flags.
+- `notifications/` — drawer + `NotificationsBadge` (unread count) + `NotificationItem` list. State (`open`/`closed`) lives in the `app` slice.
+
+The whole thing is a 100vh flex column with a scrollable content area. The notifications drawer closes automatically on unmount of the layout.
+
+---
+
+## `Toolbar` — page-level "right panel" shell
+
+- Source: `src/layouts/toolbar/Toolbar.tsx`
+- Used by: the documentation pages you are reading right now.
+
+#### Two-column responsive shape
+
+- **Desktop (lg+):** main content takes 8/12 columns; a fixed tools card sits in the remaining 4/12 on the right.
+- **Mobile/Tablet:** main content takes the whole width; the tools card collapses into a floating action button that opens a slide-up overlay.
+
+#### Tools panel
+
+The tools panel is the "on this page" sidebar in documentation pages (rendered by `MDXDocAnchors`). For other pages, it can host any contextual widgets — filters, summaries, contextual help.
+
+#### Props
+
+```ts
+{
+  tools?: ReactNode;                  // contents of the tools card
+  cardHeaderProps?: CardHeaderProps;  // title and actions of the tools card
+  cardActionsProps?: CardActionsProps;
+  children: ReactNode;                // main content
+}
+```
+
+You will not extend `Toolbar` often. Adopt it when a page benefits from a sidebar that responsively collapses on small screens.
+
+---
+
+## `VerticalTabs` — section-root navigation
+
+- Source: `src/layouts/verticalTabs/VerticalTabs.tsx`
+- Used by every "section root" component — `Accounts`, `Customers`, `Settings`, the documentation section roots (`GettingStarted`, `Overview`, `DesignSystem`, …).
+
+#### Responsive behavior
+
+- **Desktop (md+):** vertical tabs column on the left, content panel on the right.
+- **Mobile:** the tabs collapse into a dropdown `Select` at the top.
+
+#### Props
+
+```ts
+{
+  tabs: TabDescriptor[];     // { value, label, icon? }
+  tabValue: string | number; // active tab
+  onTabChange: (next: string | number) => void;
+  children: ReactNode;       // the active sub-page (<Outlet />)
+}
+```
+
+Every section root uses essentially the same code — a one-liner over `VerticalTabs` with `siblingsTabs` from `useSiblingsRoutes()`. The Plop `documentation-section` generator scaffolds this for you.
+
+---
+
+## When to add a new layout
+
+Almost never. The four layouts here cover every Coreola page shape:
+
+| You are building...                        | Use                                       |
+|--------------------------------------------|-------------------------------------------|
+| A public page (auth-style)                 | `AuthLayout` (or fork it if truly novel)  |
+| Anything authenticated                     | `DashboardLayout`                         |
+| A page with a contextual right panel       | `Toolbar` inside `DashboardLayout`        |
+| A multi-page section with sibling tabs     | `VerticalTabs` via a section-root component |
+
+New layouts are a smell. If you find yourself reaching for one, first ask whether the existing layout could be extended with a prop.
+
+---
+
+## How a layout enters the route tree
+
+Layouts are referenced from `routes.ts` via the parent route's `importUrl`. The children of that route render inside the layout's `<Outlet />`:
+
+```ts
+{
+  path: '/auth',
+  importUrl: 'layouts/authLayout/AuthLayout',
+  children: [
+    { path: 'sign-in', importUrl: 'features/auth/signIn/SignIn', ... },
+    // ...
+  ],
+}
+```
+
+This is how the router builder (`src/app/router.tsx`) knows what wraps what.
+
+---
+
+## Common props across layouts
+
+All four layouts:
+
+- Honor the active theme (light/dark) via MUI's `ThemeProvider` higher up the tree.
+- Are wrapped by the global `ErrorBoundary` and `SnackbarProvider`.
+- Render their children through `<Outlet />` rather than as direct props — so the data router can swap children on navigation without remounting the layout.
+
+---
+
+## Next steps
+
+- [Routing](/development/routing) — how routes pick layouts via `importUrl`
+- [Architecture](/overview/architecture) — where layouts sit in the bootstrap
+- [Components](/design-system/components) — the system components inside the layouts (`LanguageSwitch`, `ThemeSwitch`, `Breadcrumbs`)

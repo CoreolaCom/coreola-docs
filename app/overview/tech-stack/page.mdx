@@ -1,0 +1,339 @@
+# Tech Stack
+
+The complete list of libraries Coreola depends on, grouped by responsibility, with notes on why each one is in the box. Versions reflect what is in `package.json` at the time of writing — check the file for current pins.
+
+---
+
+## Build & runtime
+
+#### Vite 7
+
+The bundler and dev server. Fast HMR, native ES modules, code splitting, and an excellent plugin ecosystem. Configured in `vite.config.js` with React, MDX, SVGR, tsconfig-paths, and a TypeScript checker plugin.
+
+#### TypeScript 5.9
+
+Strict typing across the app. Path aliases (`api`, `app`, `features`, etc.) are declared in `tsconfig.json` and mirrored in `vite.config.js`.
+
+#### React 19 + react-dom 19
+
+UI runtime. Coreola uses concurrent features (Suspense for lazy routes, transitions where useful) but does not lean on bleeding-edge experimental APIs.
+
+#### @vitejs/plugin-react
+
+JSX/TSX transform plus Fast Refresh.
+
+#### vite-plugin-checker
+
+Inline TypeScript error overlay during development.
+
+#### vite-plugin-svgr
+
+Imports SVG files as React components.
+
+#### vite-tsconfig-paths
+
+Resolves the path aliases from `tsconfig.json` at build time.
+
+#### @mdx-js/rollup
+
+Compiles `.mdx` files. Used both for component documentation and for the documentation pages you are reading.
+
+---
+
+## UI
+
+#### Material UI 7 (`@mui/material`, `@mui/icons-material`, `@mui/lab`, `@mui/utils`)
+
+The primary component library. Coreola uses MUI for layout, typography, inputs, surfaces, navigation, and most other primitives. Theming is wired through MUI's `ThemeProvider`.
+
+#### @mui/x-date-pickers
+
+Date and date-range pickers, used by the `DatePicker` component and the assessments filters.
+
+#### @emotion/react + @emotion/styled
+
+The styling engine MUI sits on. Coreola uses `styled()` for component-level styles and the `sx` prop for one-offs.
+
+#### @fontsource/inter
+
+Self-hosted webfonts; no external font CDN.
+
+#### overlayscrollbars + overlayscrollbars-react
+
+Custom scrollbar styling that respects the active theme.
+
+#### react-easy-crop
+
+Avatar and image cropping, used by `EditImage` and the user photo flow.
+
+#### react-dropzone
+
+Drag-and-drop file uploads.
+
+#### `@dnd-kit/{core, modifiers, sortable, utilities}`
+
+Drag-and-drop primitives. Used by table column reorder and any sortable list.
+
+#### react-resize-detector
+
+Detects element resize for responsive components (e.g., the toolbar layout, charts).
+
+#### react-country-flag
+
+Country flag glyphs (used in country-aware inputs and language switch).
+
+---
+
+## State, data, and forms
+
+#### Redux Toolkit (`@reduxjs/toolkit`)
+
+The single Redux store. Slices are written with `createSlice`; data slices are written with `createApi` (RTK Query).
+
+#### react-redux
+
+The React bindings for Redux.
+
+#### redux + redux-persist
+
+Underlying Redux runtime, plus persistence to local storage. Configured in `src/app/reducers.ts`.
+
+#### @reduxjs/toolkit/query (RTK Query)
+
+The HTTP layer. Each `src/api/<resource>/` is one `createApi` slice with its own endpoints, generated hooks, and tag-based cache invalidation.
+
+#### react-hook-form + @hookform/resolvers
+
+Form state and validation wiring.
+
+#### yup
+
+Schema validation paired with react-hook-form via `@hookform/resolvers/yup`.
+
+#### lodash
+
+Used selectively for object utilities (`_.get`, `_.cloneDeep`, etc.). Imported per-method to keep the bundle slim.
+
+#### nanoid
+
+Short collision-resistant IDs.
+
+#### luxon
+
+Date-time handling. Preferred over `Date` for parsing, formatting, and arithmetic.
+
+---
+
+## Routing
+
+#### react-router-dom 7
+
+The data router (`createBrowserRouter`). Coreola translates its `routes.ts` config into React Router's `RouteObject[]` at startup.
+
+---
+
+## Access control & feature flags
+
+#### @casl/ability
+
+CASL provides the `Ability` instance used for route filtering and in-page checks. Helpers in `src/helpers/rbac.ts` build the ability from the user's matrix.
+
+---
+
+## Internationalization
+
+#### i18next
+
+The core i18n engine.
+
+#### react-i18next
+
+React bindings — `useTranslation`, `<Trans>`.
+
+#### i18next-browser-languagedetector
+
+Auto-detects the user's language from the browser settings.
+
+#### i18next-http-backend
+
+Loads translation JSON from `public/locales/<lang>/<ns>.json`.
+
+#### i18next-localstorage-backend
+
+Caches translations in localStorage for fast subsequent loads.
+
+#### i18next-chained-backend
+
+Wires the HTTP and localStorage backends in priority order.
+
+#### i18n-iso-countries
+
+Localized country names (used by the json-server endpoints and country-aware UI).
+
+---
+
+## Notifications & feedback
+
+#### notistack
+
+The snackbar/toast system. A global `snackActions` accessor in `src/helpers/snackBarUtils.ts` lets non-React code (like `baseQuery`) raise toasts.
+
+#### zxcvbn
+
+Password strength estimator behind the `PasswordStrength` component.
+
+---
+
+## Charts and data visualization
+
+#### @nivo/bar, @nivo/line, @nivo/pie
+
+The dashboard charts. Theming is wired into MUI's palette so charts respond to light/dark.
+
+#### highlight-words-core
+
+The matching engine behind the `HighlightWords` component (used in search results and table cells).
+
+#### shiki
+
+Syntax highlighter behind the `CodePreview` component (used by docs and Storybook).
+
+#### mui-markdown
+
+Renders Markdown inside MUI surfaces (used in a few places where MDX is overkill).
+
+---
+
+## Inputs & masks
+
+#### @desource/phone-mask
+
+Phone number masking logic behind `PhoneInput`.
+
+#### react-imask
+
+Generic input masking (used by date and number inputs where appropriate).
+
+---
+
+## Authentication helpers
+
+#### jwt-decode
+
+Decodes the bearer token to read expiry. Used to drive token refresh and silent re-validation.
+
+---
+
+## Performance & monitoring
+
+#### web-vitals
+
+Reports Core Web Vitals. Wired in `src/reportWebVitals.ts`.
+
+#### active-requests
+
+The active-request counter maintained by `baseQuery`. Coreola uses it as shared request state; the default dashboard layout favors per-component skeletons rather than a global loading bar.
+
+#### usehooks-ts
+
+A small selection of typed hooks (`useDebounceValue`, `useEventListener`, etc.) used by Coreola's own hooks.
+
+#### glob
+
+Used in tooling scripts (translation extraction, etc.).
+
+---
+
+## Mock backend
+
+#### json-server
+
+The mock REST backend used in development.
+
+#### json-server-auth
+
+Adds bcrypt-based auth (`/login`, `/register`, `/send-password`) on top of json-server. The UI routes are `/auth/sign-in`, `/auth/sign-up`, and `/auth/send-password`.
+
+#### @faker-js/faker
+
+Generates realistic seed data — names, emails, addresses, dates — for the mock database.
+
+#### json-concat + dotenv + nodemon
+
+Tooling for the json-server: merging fixture files, loading env vars, and live-reloading the server.
+
+---
+
+## Testing
+
+#### vitest + @vitest/coverage-v8
+
+The unit test runner and coverage tool.
+
+#### @testing-library/react + @testing-library/jest-dom + @testing-library/user-event + @testing-library/dom
+
+Component testing utilities.
+
+---
+
+## Quality
+
+#### `eslint` + `@typescript-eslint/*` + `eslint-plugin-{react, react-hooks, react-refresh, import, jsx-a11y, prettier}` + `@vitest/eslint-plugin`
+
+Linting setup. Configuration is split — root `eslint.config.js` for the dev experience, `eslint.lint-staged.config.js` for pre-commit.
+
+#### prettier + @trivago/prettier-plugin-sort-imports
+
+Formatting and deterministic import sort order.
+
+#### husky + lint-staged
+
+Git hooks running prettier and eslint on staged files.
+
+#### vite-plugin-checker
+
+Surface TypeScript errors during dev (also listed under Build).
+
+#### madge
+
+`npm run circular` uses madge to detect circular imports.
+
+---
+
+## Tooling & scaffolding
+
+#### plop
+
+The code generator. Custom generators in `plop/templates.cjs` create:
+
+- `mvvm-component` — full MVVM feature page
+- `component-doc` — showcase component with localized MDX
+- `documentation-page` — documentation page (the kind you are reading)
+
+#### storybook scripts
+
+Optional component-library browser. Coreola reserves `npm run storybook` and `npm run build-storybook` scripts, but Storybook packages and `.storybook/` configuration are not initialized by default. See [Storybook](/development/storybook) before using those scripts.
+
+#### rollup-plugin-visualizer
+
+Bundle inspection. `npm run analyze` opens an interactive treemap of the production bundle.
+
+---
+
+## What is intentionally NOT in the stack
+
+Some popular tools were considered and not adopted. Knowing why is useful when picking a fork:
+
+- **Tailwind / CSS-in-JS frameworks other than Emotion** — MUI is the design surface; mixing Tailwind would fight it.
+- **Zustand / Jotai** — RTK was already needed for RTK Query; adding a second store layer creates two sources of truth.
+- **React Query** — RTK Query covers the same surface and integrates with Redux DevTools, persistence, and the existing store.
+- **Next.js / Remix** — Coreola is a SPA. SSR is not a goal for this product class (admin/internal tools).
+- **Apollo / GraphQL** — Coreola targets REST. A GraphQL fork is feasible but would replace the entire `src/api/` layer.
+
+---
+
+## Next steps
+
+- [Architecture](/overview/architecture) — how these pieces fit together
+- [Project Structure](/getting-started/project-structure) — where each library is used
+- [Product Philosophy](/overview/product-philosophy) — the opinions behind the choices

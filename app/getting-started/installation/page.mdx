@@ -1,0 +1,157 @@
+# Installation
+
+This page covers everything from cloning the repository to a working local development environment with the mock backend.
+
+For environment variable details and dev-server tips, continue to [Environment](/getting-started/environment) and [Running Locally](/getting-started/running-locally).
+
+---
+
+## Prerequisites
+
+You need the following installed:
+
+- **Node.js** — v20 or newer is recommended. Vite 7 requires Node 18+, and several dev dependencies expect a modern toolchain.
+- **npm** — comes with Node. The repo's lockfile is `package-lock.json`, so use npm rather than pnpm or yarn to avoid lockfile drift.
+- **Git** — to clone the repository.
+
+Optional but useful:
+
+- A REST client (Postman, Insomnia, or `curl`) to inspect the mock backend at `http://localhost:7000`.
+- A browser with React DevTools and Redux DevTools extensions.
+
+---
+
+## 1. Clone the repository
+
+```bash
+git clone <your-coreola-repo-url> coreola-mui
+cd coreola-mui
+```
+
+---
+
+## 2. Install dependencies
+
+```bash
+npm install
+```
+
+This installs both runtime and development dependencies declared in `package.json`. The install also triggers Husky to register Git hooks via the `prepare` script.
+
+> **Note:** the `prepare` script expects a sibling `FEDashboard/.husky` directory. If you do not use Husky in your setup, the install step will simply log a warning — it does not block dependency installation.
+
+---
+
+## 3. Configure environment variables
+
+Coreola reads configuration from `.env.local` (gitignored) at the repo root. A template lives in `.env.sample`:
+
+```bash
+cp .env.sample .env.local
+```
+
+`.env.sample` contains:
+
+```
+# URL of Real API
+VITE_APP_SYSTEM_API_URL=
+# You can also use mock API. It is useful if some endpoints not ready on the Real API.
+VITE_APP_MOCKUP_API_URL=http://localhost:7000
+```
+
+For a first run against the mock backend, also set the json-server port:
+
+```
+JSON_SERVER_PORT=7000
+VITE_APP_MOCKUP_API_URL=http://localhost:7000
+```
+
+A full reference of every variable is in [Environment](/getting-started/environment).
+
+---
+
+## 4. Start the mock backend
+
+In a dedicated terminal:
+
+```bash
+npm run json-server
+```
+
+This:
+
+1. Regenerates `json-server/data/db.json` from the JSON fixtures and Faker generators.
+2. Starts a json-server + json-server-auth instance on `http://localhost:7000` with `nodemon` watching for changes.
+
+You should see a list of routes printed to the console. Leave this terminal running.
+
+---
+
+## 5. Start the application
+
+In a second terminal:
+
+```bash
+npm start
+```
+
+This clears the TypeScript build cache and starts Vite on port `3001`. Vite opens the browser automatically — if it does not, visit:
+
+```
+http://localhost:3001
+```
+
+You should land on the sign-in page.
+
+---
+
+## 6. Sign in
+
+The mock backend ships with two seeded users in `json-server/data/api/users.json`. They share a single bcrypt-hashed password — for security, the plaintext password is **not** stored in the repo. You have two options:
+
+### Option A — sign up a fresh account
+
+The cleanest path on a new machine. Open `/auth/sign-up`, fill in name, email, and password, and submit. The new account is written to the running json-server instance and you are signed in immediately.
+
+> **Note:** sign-ups created against the mock backend do not persist after `npm run json-server` regenerates `db.json`. For a stable account, use option B.
+
+### Option B — set a known password for a seeded user
+
+1. Stop the json-server.
+2. Run a one-off node script that hashes a chosen password with bcrypt (`bcryptjs`, rounds 10) and replace the `password` field of the desired user in `json-server/data/api/users.json` and any matching entries in the regenerated `db.json`.
+3. Restart `npm run json-server`.
+
+If you only need a working session for evaluation, **option A is faster**.
+
+---
+
+## 7. Verify the install
+
+Once signed in, you should see:
+
+- The dashboard layout (sidebar with sections, header with theme switch and language switch).
+- At least one of: **Dashboards**, **Collections**, **Application**, depending on the abilities granted to your user.
+- The bottom of the sidebar contains the **Documentation** group — open `Getting Started → Introduction` to confirm MDX rendering works.
+
+If anything is missing, see [Running Locally → Troubleshooting](/getting-started/running-locally).
+
+---
+
+## Optional: Storybook
+
+Storybook is optional and not initialized in a fresh checkout. To add it as an isolated component sandbox:
+
+```bash
+npx storybook@latest init
+npm run storybook
+```
+
+Pick `@storybook/react-vite` when prompted and wire the Coreola providers in `.storybook/preview.tsx`. After setup, Storybook serves on port `6006` at `http://localhost:6006`.
+
+---
+
+## Next steps
+
+- [Environment](/getting-started/environment) — every supported environment variable
+- [Running Locally](/getting-started/running-locally) — dev server tips, ports, hot reload, real API mode
+- [Project Structure](/getting-started/project-structure) — where everything lives

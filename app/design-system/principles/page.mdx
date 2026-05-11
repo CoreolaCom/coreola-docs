@@ -1,0 +1,172 @@
+# Design Principles
+
+Coreola adopts Material UI as its design surface and adds a small number of conventions on top of it. This page describes those conventions — they are not aesthetic preferences but the rules that keep the product visually and behaviorally coherent.
+
+If you are extending Coreola, treat these as defaults. Deviate when the case is strong.
+
+---
+
+## 1. Material Design first, deviations second
+
+Coreola does not invent a new visual language. It uses MUI components, MUI spacing, MUI elevation, MUI motion. The token system in `src/themes/` adapts MUI's palette, typography, and component overrides, but the underlying grammar is Material Design.
+
+Why: MUI gets accessibility, dark mode, RTL, density, and motion mostly right. Replacing that work with something hand-rolled is not a good use of your team's time.
+
+Where Coreola deviates from defaults, the deviation lives in `src/themes/defaults/options.ts` (cross-mode) or in `light/dark` overrides — never in component code.
+
+---
+
+## 2. Density over decoration
+
+This is an admin product. Users come to scan, filter, edit, and decide — not to admire whitespace.
+
+- The base font size is **13px** (`settings.baseFontSize`), not the 16px default.
+- The spacing unit is **4px** (`options.spacing: 4`), so `theme.spacing(2)` = 8px.
+- Tables, lists, and forms favor compact size variants (`size="small"`) by default.
+- The default MUI Button size is `'small'`.
+
+If a page looks "tight", that is the point.
+
+---
+
+## 3. One way to do anything
+
+For every recurring UI need there should be one preferred component.
+
+| Need                        | Use                                                |
+|-----------------------------|----------------------------------------------------|
+| Data table                  | `Table` from `src/components/table/`               |
+| List with loading and empty | `DataList`                                         |
+| Inline editable text        | `EditableField`                                    |
+| Image picker with crop      | `EditImage`                                        |
+| Phone input                 | `PhoneInput`                                       |
+| Search input                | `SearchInput`                                      |
+| Confirm a destructive action| `ConfirmDialog`                                    |
+| Show a transient message    | `snackActions` (notistack)                         |
+| Empty state                 | `EmptyState`                                       |
+| Loading placeholder         | `Skeleton` / `LinearProgress`                      |
+| Card surface                | `Card`                                             |
+| Action menu                 | `ActionMenu`                                       |
+| Breadcrumb                  | `Breadcrumbs`                                      |
+| Status indicator            | `Status`, `Priority`, `Risk`, `Point`              |
+| User identity chip          | `UserBadge`, `AvatarCard`                          |
+
+When the same need is solved a second way, that is technical debt — pick one and remove the other.
+
+---
+
+## 4. Consistent feedback
+
+Every action has feedback. The form of feedback is fixed:
+
+- **Successful mutation** → green snackbar via `snackActions.success(...)`.
+- **Validation error inside a form** → field-level error message under the input.
+- **Server error from a mutation** → red snackbar via `baseQuery` (automatic for RTK Query mutations).
+- **Loading mutation** → button shows a spinner; nothing else moves.
+- **Loading list/details** → `Skeleton` rows in the shape of the real content, not a center-screen spinner.
+- **Empty data** → `EmptyState` with a one-line description and, where useful, a primary action.
+- **Permission denied** → the affected control is hidden, not disabled. Disabled controls confuse users; hidden controls do not.
+- **Destructive action** → always behind a `ConfirmDialog`.
+
+These rules are not negotiable per page.
+
+---
+
+## 5. Theme tokens, not literals
+
+Hard-coded colors and pixel values are a smell. Use the theme.
+
+```ts
+// Good
+sx={{ color: 'primary.main', mb: 2 }}
+
+// Bad
+sx={{ color: '#693F83', marginBottom: '8px' }}
+```
+
+Why: literals do not respond to dark mode and break when the palette is retuned. The theme tokens — palette colors, `theme.spacing`, `theme.shape`, `theme.shadows`, `theme.typography` — survive both.
+
+Acceptable exceptions:
+- The chart libraries (@nivo) need explicit colors. Wire them through `theme.palette.color.chart` so they still respond to the theme.
+- One-off motion durations, where the theme transition tokens do not fit.
+
+---
+
+## 6. Layout follows function
+
+Coreola standardizes three page shapes. Most pages are one of these:
+
+#### Catalog / list page
+
+A toolbar (search + filters + actions) above a `Table`. The body of the page is the table itself, which scrolls within the layout's content area. Pagination sits at the bottom of the table.
+
+Used by: customers list, assessments list, users list.
+
+#### Detail page
+
+A breadcrumb above a stack of cards. Each card is one logical concern (overview, decision, evidence, findings, activity). Dialogs handle inline edits.
+
+Used by: assessment details, customer details.
+
+#### Dashboard page
+
+A grid of KPI cards across the top, charts and supporting cards below. No primary table — dashboards summarize, they do not list.
+
+Used by: application dashboard, assessments dashboard.
+
+A page that does not fit one of these shapes is worth a conversation before it gets built.
+
+---
+
+## 7. Light and dark are first-class
+
+Every component must work in both light and dark. This means:
+
+- No hard-coded backgrounds — use `background.*` palette tokens.
+- No hard-coded borders — use `border.*` palette tokens.
+- No assumptions about contrast direction — use `text.*` palette tokens, not `'black'` or `'white'`.
+- Hover, focus, and selected states use `action.*` palette tokens.
+- Custom illustrations and SVGs should respect `currentColor` or take a `color` prop.
+
+Charts use `theme.palette.color.chart` and similar to stay coherent.
+
+---
+
+## 8. Motion is restraint, not feature
+
+Coreola uses motion sparingly:
+
+- Buttons get a 150ms transform on `:active` (defined in `MuiButton` overrides).
+- Drawers and dialogs use MUI's default transitions plus a subtle `backdrop-filter: blur(3px) grayscale(90%)` on the backdrop.
+- Tab indicators slide via the MUI default.
+
+We do not animate page transitions, fade in cards, or use scroll-triggered effects. Admin users navigate fast — motion that gets in their way is friction.
+
+---
+
+## 9. Accessibility is not optional
+
+MUI handles most accessibility out of the box. Coreola adds:
+
+- Every interactive control has a clear label (visible or `aria-label`).
+- Color is never the only signal — statuses pair a color with a label or icon.
+- Modals trap focus; dialogs are dismissible with `Escape`.
+- Keyboard navigation works in tables, menus, tabs, and the sidebar — verified by `eslint-plugin-jsx-a11y` and by manual review during PR.
+
+---
+
+## 10. Internationalization is built in
+
+All user-facing strings go through `useTranslation` from react-i18next. Hard-coded strings are caught in code review. The exception is developer-facing strings inside tooling — but production UI has none.
+
+Right-to-left support is not currently configured but is straightforward to add at the MUI theme level if needed.
+
+---
+
+## Next steps
+
+- [Typography](/design-system/typography) — type scale and usage
+- [Colors](/design-system/colors) — palette and roles
+- [Spacing](/design-system/spacing) — the 4px grid
+- [Icons](/design-system/icons) — MUI icon set and conventions
+- [Components](/design-system/components) — full component inventory

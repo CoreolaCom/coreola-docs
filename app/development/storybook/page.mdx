@@ -1,0 +1,231 @@
+# Storybook
+
+Coreola has **Storybook scripts reserved but not yet initialized**. `package.json` contains `npm run storybook` and `npm run build-storybook`, but the Storybook packages, `.storybook/` config folder, and `*.stories.tsx` files are not present yet.
+
+This page covers what is in place, what to do to finish the setup, and the conventions to apply once it is running.
+
+The companion **component showcase** (the routes under `/core-components` and `/mui-components`) is in-app documentation, not Storybook. Both can coexist — see "Storybook vs the in-app showcase" below.
+
+---
+
+## What is in place
+
+In `package.json`:
+
+```json
+"scripts": {
+  "storybook":       "storybook dev -p 6006",
+  "build-storybook": "storybook build"
+}
+```
+
+After Storybook is initialized, the default dev-server port is **6006** at `http://localhost:6006`.
+
+What is **not** in place yet:
+
+- No Storybook runtime packages in `dependencies` or `devDependencies`.
+- No `.storybook/` folder at the repo root (no `main.ts`, no `preview.tsx`).
+- No `*.stories.tsx` files anywhere under `src/`.
+
+So `npm run storybook` will currently fail until Storybook is installed and configured.
+
+---
+
+## Finishing the setup
+
+Two paths:
+
+#### Storybook CLI init
+
+The fastest path is the official initializer:
+
+```bash
+npx storybook@latest init
+```
+
+This scaffolds `.storybook/main.ts`, `.storybook/preview.tsx`, and a handful of sample stories. After running it:
+
+1. Verify the framework choice — pick `@storybook/react-vite`.
+2. Open `.storybook/main.ts` and confirm the `stories` glob matches Coreola's layout, e.g.:
+
+   ```ts
+   stories: ['../src/**/*.stories.@(ts|tsx|mdx)']
+   ```
+
+3. Open `.storybook/preview.tsx` and wire the **Coreola theme and i18n** so stories render in the same context as the app (see "Decorators" below).
+
+#### Manual setup
+
+If you want full control of the addons list, create `.storybook/main.ts` by hand. Minimum content:
+
+```ts
+import type { StorybookConfig } from '@storybook/react-vite';
+
+const config: StorybookConfig = {
+  stories: ['../src/**/*.stories.@(ts|tsx|mdx)'],
+  addons: [
+    '@storybook/addon-essentials',  // controls, actions, viewport, backgrounds, etc.
+    '@storybook/addon-a11y',         // optional but recommended
+    '@storybook/addon-themes',       // light/dark switching
+  ],
+  framework: { name: '@storybook/react-vite', options: {} },
+  viteFinal: (cfg) => cfg,           // inherit Coreola's vite.config.js
+};
+export default config;
+```
+
+`viteFinal` lets Storybook reuse the same alias resolver, MDX plugin, and TypeScript checker that the main app uses.
+
+---
+
+## Decorators — wrapping stories in the Coreola context
+
+Components in Coreola depend on:
+
+- The MUI theme (light or dark).
+- The Redux store (the `app` slice for theme/language; `user` slice for auth-gated components).
+- i18next for translations.
+
+A working `preview.tsx` wires all three:
+
+```tsx
+import { Provider } from 'react-redux';
+import { I18nextProvider } from 'react-i18next';
+import { createTheme, ThemeProvider } from '@mui/material/styles';
+import { store } from '../src/app/store';
+import i18n from '../src/app/i18n';
+import themes from '../src/themes/themes';
+
+export const decorators = [
+  (Story, ctx) => (
+    <Provider store={store}>
+      <I18nextProvider i18n={i18n}>
+        <ThemeProvider theme={createTheme(ctx.parameters.theme === 'dark' ? themes.dark : themes.light)}>
+          <Story />
+        </ThemeProvider>
+      </I18nextProvider>
+    </Provider>
+  ),
+];
+```
+
+With `@storybook/addon-themes` the toggle becomes a toolbar switch instead of a parameter.
+
+---
+
+## Writing a story
+
+Conventions once stories exist:
+
+#### File location
+
+Co-located with the component:
+
+```
+src/components/card/
+├─ Card.tsx
+├─ card.styled.ts
+├─ card.types.ts
+└─ Card.stories.tsx
+```
+
+#### Story format
+
+Use the **CSF 3** format (Component Story Format 3) with TypeScript:
+
+```tsx
+import type { Meta, StoryObj } from '@storybook/react';
+import Card from './Card';
+
+const meta: Meta<typeof Card> = {
+  title: 'Surfaces/Card',
+  component: Card,
+  tags: ['autodocs'],
+};
+export default meta;
+
+type Story = StoryObj<typeof Card>;
+
+export const Default: Story = {
+  args: { variant: 'outlined', children: 'Body content' },
+};
+
+export const WithHeader: Story = {
+  args: { variant: 'outlined', cardHeaderProps: { title: 'Title' } },
+};
+```
+
+#### Title structure
+
+Match the design-system categories from the in-app showcase:
+
+```
+Data Display / Table
+Inputs / EditableField
+Surfaces / Card
+Feedback & States / EmptyState
+System / ThemeSwitch
+```
+
+Storybook builds the sidebar tree from `title`. Keeping it parallel to the in-app showcase makes navigation predictable across both surfaces.
+
+---
+
+## When to add a story
+
+Default: **every shared component in `src/components/` gets at least one story**.
+
+Higher bar:
+
+- One story per important variant (sizes, states, with/without optional props).
+- One story per edge case (long content, empty state, error state).
+- A story for **interactive** scenarios using `@storybook/test` (formerly `@storybook/testing-library`) if the component has non-trivial behavior.
+
+Page-level features (under `src/features/`) usually do **not** get Storybook coverage — they depend on too much app context. Cover them in [Testing](/development/testing) instead.
+
+---
+
+## Storybook vs the in-app showcase
+
+The in-app component showcase (`/core-components/*`, `/mui-components/*`) and Storybook serve overlapping but distinct purposes:
+
+| Concern                      | In-app showcase            | Storybook                    |
+|------------------------------|----------------------------|------------------------------|
+| Audience                     | Product users + developers | Developers + designers       |
+| Lives where                  | Inside the running app     | Separate dev server          |
+| Default i18n / theme context | Yes                        | Via decorators (configured)  |
+| Edit MDX inline              | Yes                        | Via MDX stories              |
+| Component controls (knobs)   | Hand-rolled per page       | Generated from `args`        |
+| Interaction tests            | No                         | Yes (`@storybook/test`)      |
+
+Both have a place. Coreola's in-app showcase is the canonical **product-facing** documentation; Storybook is the **developer-facing** sandbox for exploring components in isolation.
+
+---
+
+## Anti-patterns
+
+- **Stories that import from `features/`.** Stories should target shared components only. Feature pages depend on app context and belong in integration tests.
+- **Stories without decorators.** A story that renders without the Coreola theme is a story of a different design system. Wire decorators in `preview.tsx`.
+- **One mega-story file per category.** One file per component is the rule.
+- **Treating Storybook as the only documentation surface.** The in-app showcase exists for a reason — keep both updated.
+- **Hand-rolling controls.** CSF 3 + `argTypes` autogenerate them. Reach for custom UI only when the prop's shape is genuinely beyond a primitive.
+
+---
+
+## CI
+
+Once stories exist, `npm run build-storybook` produces a static site you can host on Vercel, Netlify, or any static host. A typical CI step:
+
+```bash
+npm run build-storybook
+```
+
+then deploy `storybook-static/` as a separate site. The deployed Storybook becomes a designer-friendly URL that lives alongside the product.
+
+---
+
+## Next steps
+
+- [Testing](/development/testing) — for behavior coverage of feature components
+- [Components](/design-system/components) — the inventory of what could have stories
+- [Coding Conventions](/development/coding-conventions) — file naming and import rules apply to stories too

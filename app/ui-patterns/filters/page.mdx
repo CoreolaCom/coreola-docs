@@ -1,0 +1,180 @@
+# Filters
+
+Filters in Coreola are declarative — you describe what they filter and how, and the `Table` component wires up the UI, URL state, and query parameters automatically.
+
+- UI: `src/components/table/tableFilters/TableFilters.tsx`, `src/components/table/tableFilters/ActiveFilters.tsx`
+- Types: `src/components/table/tableFilters/tableFilters.types.ts`
+- Hook: `src/components/table/hooks/useTableFilters.ts`
+
+---
+
+## The filter config
+
+A filter is a `TableFilterConfig`:
+
+```ts
+{
+  id: 'status',
+  label: 'Status',
+  type: 'checkbox',                       // or 'radio'
+  persistent: true,                       // always visible vs optional
+  query: { param: 'status_values' },      // how it serializes to the server query
+  options: [{ label: 'Approved', value: 'approved' }, ...],
+  defaultValue: ['approved'],             // initial values
+  getValue: (row) => row.status,          // for client-mode filtering
+}
+```
+
+Key fields:
+
+- **`id`** — unique within the table; namespaces the URL param.
+- **`label`** — visible label in the toolbar and the active-filters chips.
+- **`type`** — `'checkbox'` (multi-select) or `'radio'` (single-select).
+- **`persistent`** — when `true`, the filter is always shown. When `false`, it lives behind the "Add filter" menu and the user opts in.
+- **`query`** — controls how the active values are sent to the server.
+- **`options`** — array of `{ label, value }` for the dropdown.
+- **`defaultValue`** — values selected on first load.
+- **`getValue`** — only used in client-mode tables; pulls the comparable value out of a row.
+
+---
+
+## `query` — server-side serialization
+
+The `query` block tells the URL state hook how to send the filter to the backend. Three knobs:
+
+```ts
+query: {
+  param: 'status_values',         // server query-param name
+  valueType: 'string',            // 'string' | 'number' | 'boolean'
+  mode: 'multi',                  // 'auto' | 'single' | 'multi'
+}
+```
+
+- **`param`** — defaults to the filter `id`. Override when the backend expects a different name.
+- **`valueType`** — controls how raw URL strings are coerced before they hit the query call. Use `'boolean'` for a yes/no checkbox; `'number'` for numeric ids.
+- **`mode`** — when `'multi'`, an array is sent (`?status_values=a&status_values=b` or comma-joined depending on backend). When `'single'`, only the first value is sent. `'auto'` picks based on `type` — checkbox → multi, radio → single.
+
+The merged query params come back from `useServerPaginatedTable` as `queryParams` — pass them to your RTK Query call.
+
+---
+
+## Persistent vs optional
+
+The mental model:
+
+- **Persistent filters** (`persistent: true`) are part of the table's normal toolbar. The user sees them on first visit. Examples: status, owner, date range — anything that shapes the view fundamentally.
+- **Optional filters** (`persistent: false` or omitted) live in the "+ Add filter" menu. They appear when the user opts in. Use these for filters that are useful sometimes but would otherwise clutter the toolbar.
+
+Optional-filter enablement is itself URL state — `<tableId>.enabledFilters` carries a comma-separated list of enabled filter ids, so a shared link round-trips correctly.
+
+---
+
+## How filter state lives
+
+For a table with `id="assessments"`, the URL carries:
+
+| Param                                 | Holds                                         |
+|---------------------------------------|-----------------------------------------------|
+| `assessments.filter.status`           | Comma-separated status values                 |
+| `assessments.filter.assignee`         | Comma-separated assignee ids                  |
+| `assessments.enabledFilters`          | Optional filter ids currently visible         |
+
+The full state shape exposed by `useTableFilters` is:
+
+```ts
+filtersState: {
+  values: Record<filterId, string[]>;
+  enabled: string[];   // active optional filters
+}
+```
+
+---
+
+## Active-filter chips
+
+`ActiveFilters` renders one chip per active filter. Each chip:
+
+- Shows the filter's label and currently selected values.
+- Lets the user clear individual values or remove the filter entirely.
+- Is keyboard-accessible.
+
+You do not instantiate `ActiveFilters` yourself — `Table` does it when `filters` is provided.
+
+---
+
+## Real example — assessment list
+
+From `src/features/collections/assessments/list/hooks/useAssessmentFilters.ts`:
+
+```ts
+{
+  id: 'status',
+  label: t('Status'),
+  type: 'checkbox',
+  persistent: true,
+  query: { param: 'status_values' },
+  options: assessmentsMeta?.status_options,
+  getValue: (row) => row.status,
+},
+{
+  id: 'is_active',
+  label: t('Active'),
+  type: 'checkbox',
+  persistent: true,
+  query: { valueType: 'boolean', mode: 'single' },
+  options: assessmentsMeta?.is_active_options,
+},
+```
+
+Notice the option lists come from a meta endpoint (`assessmentsMeta`) — Coreola treats enumerations as backend-driven rather than hard-coded. This means new statuses become available in the filter as soon as they exist in the data model.
+
+---
+
+## Adding a filter — quick recipe
+
+1. Open or create the page's filter hook (e.g., `useFooFilters.ts`).
+2. Append a `TableFilterConfig` object to the returned array.
+3. If `persistent`, that's it — it appears in the toolbar on the next load.
+4. If the backend needs a custom query param, set `query.param`.
+5. If the backend expects coerced types, set `query.valueType`.
+
+You do **not** need to:
+
+- Touch the `Table` component.
+- Wire URL state by hand.
+- Build a chip UI.
+- Manage open/close state for the filter menu.
+
+---
+
+## Client-mode filtering
+
+If you are filtering rows that are already on the client (a small in-memory list), set `getValue(row)` and skip `query`. The table filters the array locally on every change. Mostly used for showcase pages — production data flows server-side.
+
+---
+
+## Custom filter widgets
+
+The two built-in `type` values (`checkbox`, `radio`) cover most cases. If you need a date-range picker, a numeric range, or a free-text-with-suggestions, the path is:
+
+1. Extend `TableFilterConfig` with a new `type` discriminator (e.g., `'dateRange'`).
+2. Add the rendering branch in `TableFilters.tsx`.
+3. Make sure the serializer in `useServerTableUrlState` understands the new value shape.
+
+This is intentional friction — adding a new filter UI is a shared decision, not a per-page improvisation.
+
+---
+
+## Anti-patterns
+
+- **Filtering data inside `useGetXxxQuery` then sending to `Table`**. The point of declarative filters is letting the server filter — keep the data path one-way.
+- **Hand-rolled filter chips next to the toolbar**. `ActiveFilters` already exists; use it.
+- **Hardcoding option lists** that change over time. Drive them from `meta` endpoints.
+- **Mutating `filtersState` directly**. The state is owned by the URL — use the handlers provided by `useTableFilters`.
+
+---
+
+## Next steps
+
+- [Tables](/ui-patterns/tables) — the host component
+- [API Layer](/development/api-layer) — how `queryParams` reach RTK Query

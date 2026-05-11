@@ -1,0 +1,191 @@
+# Navigation
+
+This page covers customizing **what the user navigates to and how it is presented** — the sidebar menu, breadcrumbs, the top header, and the section-tab pattern.
+
+Routing itself (URL structure, lazy loading, ability filtering) lives in [Routing](/development/routing). This page is the **UI of navigation**, not the URL behind it.
+
+- Source: `src/components/menu/`, `src/components/breadcrumbs/`, `src/layouts/dashboardLayout/`, `src/layouts/verticalTabs/`
+- Routes: `src/app/routes.ts`
+
+---
+
+## Three navigation surfaces
+
+| Surface          | Drives navigation by              | Lives in                                              |
+|------------------|-----------------------------------|-------------------------------------------------------|
+| Sidebar menu     | `routes.ts` (filtered)            | `src/layouts/dashboardLayout/sidebar/`                |
+| Breadcrumbs      | Current route ancestors + slice   | `src/components/breadcrumbs/`                         |
+| Vertical tabs    | Sibling routes of the current     | `src/layouts/verticalTabs/`                           |
+
+All three read from `routes.ts`. None require a separate "menu config" — keeping them in sync would be a maintenance tax.
+
+---
+
+## Sidebar menu
+
+The sidebar is built from `useGetMenuTree(routes)` (`src/hooks/useGetMenuTree.tsx`). The hook:
+
+1. Calls `filterRoutesByAbility` to drop routes the user cannot see.
+2. Drops entries with `menu: false`.
+3. Groups by `group` (the values declared in `routes.ts → groups`).
+
+#### Configuring groups
+
+Groups are declared at the top of `routes.ts`:
+
+```ts
+export const groups = {
+  pages:        { title: 'Pages' },
+  components:   { title: 'Components' },
+  resources:    { title: 'Documentation' },
+  bottom:       { title: '' },
+};
+```
+
+Each route opts into a group via `group: 'pages'`. The `bottom` group is rendered at the bottom of the sidebar (Application, User menu).
+
+To add or rename a group:
+
+1. Edit the `groups` object.
+2. Update the `group` field on the relevant routes.
+3. Optionally adjust the order by reordering the object's keys (renderers iterate in insertion order).
+
+#### Customizing icons
+
+Every menu-visible route has `iconRef: SomeMuiOutlinedIcon`. Swap it freely — see [Icons](/design-system/icons).
+
+For a route group icon (the header icon at the top of a nested menu), the icon comes from the parent route's `iconRef`.
+
+#### Hiding a route from the menu
+
+Set `menu: false`. The route is still reachable by URL but does not appear in the sidebar. Useful for deep-link-only views (e.g., a "print" variant of a page).
+
+#### Collapsing menu groups
+
+The sidebar groups are collapsible. Open/closed state is in the `app` slice (`collapsedMenuGroups`). The `setCollapsedMenu` action toggles a group. State is persisted with the rest of `app`.
+
+#### Search in the header
+
+The header includes a `Search` component (`src/layouts/dashboardLayout/header/search/Search.tsx`) backed by the search API (`src/api/search/`). It does **not** read from `routes.ts` directly — it queries the backend for matching entities (customers, assessments). Configure it by editing the search API endpoint or the result-rendering component.
+
+---
+
+## Breadcrumbs
+
+Breadcrumbs are driven by a Redux slice (`src/slices/breadcrumbs/`), not by reading the route ancestors at render time. Two reasons:
+
+1. Pages need to inject **dynamic segments** (record names, ids).
+2. The order and visibility of segments is sometimes feature-specific.
+
+#### How segments enter the stack
+
+Two hooks populate the breadcrumbs slice:
+
+- **`useBreadcrumbs(routes)`** — pushes the static chain from the current route's ancestors. Called once near the top of the layout.
+- **`useBreadcrumbSectionTitle({ title })`** — pushes a dynamic segment. Called by detail pages to add the record identifier.
+
+Example from the assessment details page:
+
+```ts
+useBreadcrumbSectionTitle({ title: assessment?.key });
+```
+
+The breadcrumb chain becomes: `Collections › Assessments › <key>`.
+
+#### Customizing the separator and chip styling
+
+The `Breadcrumbs` component (`src/components/breadcrumbs/`) consumes MUI's `Breadcrumbs` with a Coreola override. Adjust:
+
+- **Separator** — via `<Breadcrumbs separator="..." />` in your customized version.
+- **Sizing** — in `options.ts → MuiBreadcrumbs` (currently set to `rem(10)`).
+- **Last-segment style** — bold and non-link by default.
+
+---
+
+## Vertical tabs (section roots)
+
+Every section root (`Accounts.tsx`, `Customers.tsx`, `GettingStarted.tsx`, …) is a small `VerticalTabs + Outlet` wrapper. The tabs are the sibling routes of the active child.
+
+#### Adding a tab
+
+Adding a new tab is **adding a sub-route** with `menu: true`:
+
+```ts
+{
+  path: 'new-tab',
+  href: '/parent/new-tab',
+  importUrl: 'features/parent/newTab/NewTab',
+  title: 'New Tab',
+  menu: true,
+}
+```
+
+The section root renders it automatically via `useSiblingsRoutes`.
+
+#### Horizontal tabs
+
+For per-card tabs (inside a detail page), use MUI's `Tabs` component directly. `VerticalTabs` is a layout-level construct — not for in-card use.
+
+---
+
+## Header customizations
+
+The top header (`src/layouts/dashboardLayout/header/`) renders, left to right:
+
+1. **Sidebar toggle** (mobile).
+2. **Logo + product name**.
+3. **Search**.
+4. **Theme switch**.
+5. **Language switch**.
+6. **Notification bell**.
+7. **User menu** (avatar + dropdown).
+
+Each piece is a small component. To rearrange:
+
+1. Open `src/layouts/dashboardLayout/header/Header.tsx`.
+2. Reorder the children in the JSX.
+3. Adjust gaps via the `sx` prop or `Stack` spacing.
+
+To replace the logo, swap the `CoreolaIcon` (or your own SVG) — the icon is read from the `routes.ts` entry near the root, so a global change there propagates.
+
+#### Adding a custom widget
+
+For a header widget (e.g., environment badge, status indicator), drop it into the header component between two existing pieces. Keep it small — the header is dense.
+
+---
+
+## Right-hand toolbar (page-level)
+
+For pages with a contextual right panel — the documentation pages, for example — use the `Toolbar` layout component (`src/layouts/toolbar/`). It hosts an arbitrary `tools` slot and collapses to a floating action button on small screens. See [Layouts → Toolbar](/modules/layouts).
+
+---
+
+## Anti-patterns
+
+- **Building a separate menu config alongside `routes.ts`.** Drift is guaranteed. The route tree is the menu config.
+- **Adding "Coming soon" entries.** Either ship the route (with placeholder content) or do not list it.
+- **Hiding routes by commenting them out.** Use `menu: false` for permanent hidden routes, or `featureFlagCan` for soft-launches.
+- **One-off horizontal tabs at the section level.** Use `VerticalTabs` — it adapts to mobile automatically. Horizontal tabs belong inside cards.
+- **Long sidebar lists without groups.** If a section has 6+ children, consider splitting via `group` or adding a section root.
+
+---
+
+## A concrete customization checklist
+
+When you fork Coreola for your product, the typical first wave of navigation changes:
+
+1. **Replace the logo** (`CoreolaIcon` → your SVG).
+2. **Rename top-level groups** in `routes.ts → groups`.
+3. **Drop unneeded sections** (e.g., delete `/core-components` and `/mui-components` once you do not need the showcase).
+4. **Move `documentation` group out of production** (gate with a feature flag, or leave it for internal users only via `abilityCan`).
+5. **Add your domain routes** under their own group.
+
+This usually fits in a single PR.
+
+---
+
+## Next steps
+
+- [Routing](/development/routing) — the URL-level twin of this page
+- [Permissions](/customization/permissions) — ability-based filtering of the sidebar
+- [Layouts](/modules/layouts) — the layout components that host navigation

@@ -1,0 +1,191 @@
+# Settings
+
+The settings module is the admin surface for **how the product behaves**. Two sub-pages today:
+
+- **General** — language, theme, sidebar style, and developer-only translation debugging.
+- **Feature Flags** — toggle features on and off without a deploy.
+
+- Source: `src/features/application/settings/`
+- API: `src/api/features/`
+- Routes: `/application/settings/general`, `/application/settings/feature-flags/:featureId?`
+
+The whole area is gated by `settings.read`.
+
+---
+
+## General
+
+#### Route
+
+`/application/settings/general`
+
+#### What it controls
+
+`General.tsx` follows the same MVVM split as other feature pages:
+
+- `General.tsx` calls `useGeneralViewModel()`.
+- `useGeneralViewModel()` reads and updates the `app` slice.
+- `GeneralView.tsx` renders the settings inside the shared `Card` component, grouped by `Chapter`.
+
+The current controls are:
+
+| Setting | Source of truth | Notes |
+|---------|-----------------|-------|
+| Language | `app` slice / i18next | Rendered through `LanguageSwitch`; persisted with the rest of app UI state. |
+| Theme | `app` slice | Uses `activeThemes` and `setCurrentTheme`; persisted client-side. |
+| Sidebar | `app` slice | `transparent` or `accentuated`; accentuated mode uses the theme's `componentsOwn.Sidebar.css.backgroundColor`. |
+| Debug translations | `app` slice + `developer_mode` feature flag | Only visible when Developer mode is enabled. |
+
+#### Developer mode behavior
+
+Debug translations are intentionally gated by the `developer_mode` feature flag:
+
+- If `developer_mode` is disabled, `inspectTranslations` is forced back to `false`.
+- If the toggle changes from the value loaded on page mount, the page shows an alert: `Reload page to see changes in developer console`.
+- The alert is hidden again when the value returns to the initial loaded value.
+
+This keeps translation inspection out of regular admin sessions while still allowing developers to debug i18n from the app UI.
+
+#### Adding a setting — the recipe
+
+1. Decide whether the setting is global product configuration or a per-user UI preference.
+2. For client-side UI preferences, add the field to the `app` slice and persist it there.
+3. For backend-owned settings, add an RTK Query endpoint in `src/api/settings/` or the API slice that owns the concern.
+4. Render the input in `GeneralView` and wire handlers through `useGeneralViewModel`.
+5. If the setting changes defaults or theme-level behavior, also update `src/app/settings.ts` or the relevant theme token.
+
+---
+
+## Feature Flags
+
+#### Route
+
+`/application/settings/feature-flags/:featureId?`
+
+The list lives on the left; the details for the selected flag open on the right when `:featureId` is present.
+
+#### Why feature flags
+
+Coreola treats feature flags as first-class infrastructure, not an afterthought. The router and the menu both filter routes by `featureFlagCan`, so a flag flip:
+
+- Hides the route in the sidebar.
+- Blocks direct navigation.
+- Disables related UI in shared components.
+
+This means a flag can disable a whole module **at runtime**, without redeploying.
+
+#### Model hooks
+
+- `useFeatures` — list-level:
+  - Fetches all flags via `useGetFeaturesQueryMapped()`.
+  - Toggles a flag's `enabled` boolean inline. Tracks `togglingFeatureIds` so the row's toggle shows a spinner without blocking other rows.
+  - Opens create / edit / delete dialogs.
+- `useFeatureDetails` — per-flag form:
+  - `key` (immutable after create)
+  - `name` (display label)
+  - `description`
+  - `enabled` toggle (also editable inline from the list)
+
+#### `FeatureType` shape
+
+From `src/api/features/features.types.ts`:
+
+```
+FeatureType {
+  id, key, name, description,
+  enabled,    // boolean — drives runtime gating
+  updated,
+}
+```
+
+`key` is the canonical identifier used in `featureFlagCan: ['<key>']` and in `useFeatureFlag('<key>')`. Choose it carefully — renaming after deploy breaks references.
+
+---
+
+## How flags affect the running app
+
+Two places consume flags:
+
+#### Route filtering
+
+The router builder (`src/app/router.tsx`) reads the feature map from `featuresApi.endpoints.getFeatures.select()` at runtime and filters routes whose `featureFlagCan` requirement is not satisfied. This is what hides `/dashboards` when the `dashboard` flag is off.
+
+```ts
+// in routes.ts
+{ path: '/dashboards', featureFlagCan: ['dashboard'], ... }
+```
+
+#### Component-level checks
+
+Inside components or hooks:
+
+```ts
+import useFeatureFlag from 'hooks/useFeatureFlag';
+
+const canExport = useFeatureFlag('export');
+return canExport ? <ExportButton /> : null;
+```
+
+`useFeatureFlag(key)` returns a boolean. It re-renders the component on flag changes — useful for the toggle-and-immediately-see-the-effect workflow.
+
+---
+
+## A flag is data, not code
+
+Flags live in the database (or json-server in dev). They are not hardcoded in the frontend. This means:
+
+- A non-developer with the right ability can flip a flag from the admin UI.
+- Flags can vary per environment (staging vs production) without code changes.
+- Removing a flag is a content edit, not a deploy.
+
+A flag should be **temporary** — added to gate an in-progress rollout, removed once the feature is stable. A flag that sticks around for a year is a smell — either the feature is stable enough to remove the gate, or it should never have been built.
+
+---
+
+## API
+
+`featuresApi`:
+
+- `GET /features` — list
+- `POST /features` — create
+- `PUT /features/:id` — update (including the inline toggle)
+- `DELETE /features/:id` — remove
+
+`Mapped` hooks normalize the shape and produce a quick-lookup map by `key` for the runtime filter.
+
+---
+
+## Permissions
+
+`/application/settings/feature-flags` and create/update/delete on individual flags all require `settings.read` (and `settings.update` for mutations).
+
+Flipping a flag affects every user instantly. Treat the ability to flip them as a **superuser-level** permission, not a regular admin one.
+
+---
+
+## Anti-patterns
+
+- **Putting feature flags in component-local state.** They will not survive reloads or sync across users. Always go through the API.
+- **Hardcoding the flag key as a string in many places.** Centralize keys in a `featureKeys` constants object if you have more than a handful.
+- **Using a flag as a permission check.** Permissions are per-user; flags are per-environment. Crossing the streams leads to "this works for me but not for them" bugs.
+- **Long-lived feature flags.** Set a removal target when you add one. Sweep periodically.
+
+---
+
+## Settings vs profile
+
+Settings is **shared admin state**. Profile is **per-user state**:
+
+- Profile owns the current user's name, email, photo, password — see [Profile](/modules/profile).
+- The `app` slice owns per-user UI preferences (theme, language) — persisted client-side.
+- Settings owns the application's collective configuration — General + Feature Flags today.
+
+If a piece of config could vary per user, it does not belong in Settings.
+
+---
+
+## Next steps
+
+- [Permissions](/customization/permissions) — `featureFlagCan` and `useFeatureFlag` together with abilities
+- [Routing](/development/routing) — how the router consumes the feature map
+- [Profile](/modules/profile) — the per-user counterpart

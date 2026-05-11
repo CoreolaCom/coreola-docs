@@ -1,0 +1,273 @@
+# Architecture
+
+This page describes how the pieces of Coreola fit together — how a request flows from a click in the browser to data on the screen, and how the codebase is organized to make that flow predictable.
+
+If you have not yet seen the folder layout, start with [Project Structure](/getting-started/project-structure).
+
+---
+
+## High-level shape
+
+Coreola is a single-page React application served by Vite, talking to one or two HTTP backends, and persisting a small slice of state to local storage.
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                         Browser                                │
+│                                                                │
+│   ┌─────────────────────────────────────────────────────────┐  │
+│   │                React app (Vite-bundled)                 │  │
+│   │                                                         │  │
+│   │   Pages (View)  ──▶  Model hooks  ──▶  RTK Query        │  │
+│   │       ▲                  │                   │          │  │
+│   │       │                  ▼                   ▼          │  │
+│   │   MUI components     Redux store        baseQuery (HTTP)│  │
+│   │                                                         │  │
+│   └────────────────────────────┬────────────────────────────┘  │
+│                                │                               │
+│              localStorage  ◀──┘ (redux-persist)                │
+└────────────────────────────────┼───────────────────────────────┘
+                                 │
+                          HTTP   │   Bearer token + JSON
+                                 │
+                ┌────────────────▼─────────────────┐
+                │                                  │
+        ┌───────┴────────┐                ┌────────┴────────┐
+        │   Real API     │                │   Mock backend  │
+        │ (your service) │                │ (json-server)   │
+        └────────────────┘                └─────────────────┘
+```
+
+There is one Redux store, one router, one ability instance, and one i18n instance per page load.
+
+---
+
+## Layers, top to bottom
+
+Coreola is organized into clear layers. Each layer depends only on the layers below it.
+
+#### View layer (`src/features/<area>/<page>/`)
+
+Pages and their views. Pure presentation — they render props and forward events. No state, no fetching, no redux subscriptions inside views.
+
+#### Model layer (the page's `hooks/use<Page>Model.ts`)
+
+A single top-level hook per page. Holds all state, fetching, mutations, dialog flags, and side effects. Views consume its return value.
+
+#### Routing layer (`src/app/router.tsx` + `src/app/routes.ts`)
+
+A flat config (`routes.ts`) describes the full route tree. `router.tsx` walks it, resolves lazy components by `importUrl`, applies redirects, and filters by ability and feature flag at navigation time.
+
+#### State layer (`src/app/store.ts` + `src/slices/` + RTK Query slices)
+
+A single Redux store combines:
+
+- App slices (`app`, `breadcrumbs`, `user`)
+- One RTK Query reducer per API resource
+
+#### Data layer (`src/api/<resource>/` + `src/helpers/baseQuery.ts`)
+
+Each resource is one RTK Query `createApi` slice with its own endpoints and generated hooks. All slices share the same `baseQuery` factory.
+
+#### Infrastructure layer
+
+Theme, i18n, persistence, error boundary, snackbar provider — wired in `src/App.tsx` once at the root.
+
+---
+
+## Bootstrap sequence
+
+When the page loads:
+
+1. `src/index.tsx` mounts `<App />` inside a Redux `<Provider>` and a `<PersistGate>`.
+2. `redux-persist` rehydrates the persisted state from `localStorage`.
+3. `src/App.tsx` wraps the tree with the MUI `<ThemeProvider>`, `<I18nextProvider>`, the snackbar provider, and the error boundary.
+4. `src/app/router.tsx` builds a React Router data router from `routes.ts`.
+5. The router resolves the matched route to a lazy component via Vite's `import.meta.glob`.
+6. The lazy component (a page like `Details.tsx`) renders, calling its model hook on first render.
+7. The model hook subscribes to RTK Query endpoints, which trigger HTTP calls through `baseQuery`.
+8. As responses arrive, RTK Query updates the store; the page re-renders with data.
+
+This sequence is the same for every page. Adding a new page does not change the bootstrap.
+
+---
+
+## Routing in practice
+
+Routes are declared as nested `Route` objects (see `app/app.types.ts`). Each route can declare:
+
+- `path` — the route segment (relative to its parent)
+- `importUrl` — the lazy component path (resolved by Vite glob)
+- `redirectTo` — turns the entry into a redirect
+- `abilityCan` — required CASL abilities (e.g. `['assessment.read']`)
+- `featureFlagCan` — required feature flag keys
+- `children` — nested routes
+- `menu`, `iconRef`, `group`, `title` — metadata for the sidebar
+
+`router.tsx` translates this config into a `RouteObject[]` for `createBrowserRouter`. The translation:
+
+- Replaces `importUrl` with React Router's `lazy` field
+- Turns `redirectTo` entries into data-router loaders that call `redirect()`
+- Performs runtime ability and feature-flag filtering at index-redirect time, so the user lands on the first sub-page they are allowed to see
+
+The sidebar menu is built from the same `routes.ts` — filtered by ability/flag — by `useGetMenuTree`. This keeps **navigation** and **routing** coherent: if a route is allowed, it shows up in the menu; if not, it does not.
+
+See [Routing](/development/routing) for full details.
+
+---
+
+## State management
+
+Coreola uses a single Redux store with two kinds of state:
+
+#### Application state (`src/slices/`)
+
+Hand-written Redux Toolkit slices for non-API state:
+
+- `app` — theme, language, sidebar collapse state, active requests counter, etc.
+- `breadcrumbs` — the breadcrumb stack rendered by the dashboard layout
+- `user` — current user, access token, abilities
+
+#### Data state (RTK Query, `src/api/<resource>/`)
+
+One RTK Query slice per backend resource. Each slice owns its cache, request lifecycle, and tag invalidation. Slices expose generated hooks (e.g. `useGetAssessmentsQuery`, `useUpdateFindingMutation`) that pages consume via their model hook.
+
+#### Persistence
+
+`redux-persist` is configured in `reducers.ts`:
+
+- The root persist whitelist is `['user']` — auth token, profile, abilities.
+- The `app` slice has its own nested persist config that **persists everything except `activeRequestsCount`** — so theme, language, and similar UI preferences survive reloads.
+- API caches are intentionally **not** persisted; they are refetched on next load.
+
+A `logout` action wipes the persisted root and re-initializes everything except the `app` slice (so theme/language survive logout).
+
+See [State Management](/development/state-management).
+
+---
+
+## Data flow on a single click
+
+Tracing a "click button → row updates" interaction:
+
+1. **View** dispatches a callback from the model hook (e.g. `onUpdateStatus(rowId, 'approved')`).
+2. **Model hook** calls an RTK Query mutation hook: `await updateStatus({ id, status }).unwrap()`.
+3. **RTK Query** wraps the call through `baseQuery`:
+   - Increments `activeRequestsCount` for any component that subscribes to global request activity
+   - Adds `Authorization: Bearer <token>` from the user slice
+   - Sends the request to either `SYSTEM_API` or `MOCKUP_API` based on the slice's `targetAPI`
+4. On success, RTK Query updates its cache. Tags (e.g. `['Assessment', { type: 'Assessment', id }]`) cause related queries to refetch.
+5. On error, `baseQuery` shows a snackbar through `snackActions.error()` and (for 401) triggers token re-validation.
+6. **View re-renders** with new data.
+
+This flow is identical across every feature. Pages do not write to Redux directly; they go through model hooks, which go through RTK Query.
+
+---
+
+## API targets
+
+Coreola supports two backends concurrently:
+
+- `SYSTEM_API` — the real production backend
+- `MOCKUP_API` — the json-server mock backend
+
+Each RTK Query slice picks one via `getBaseQuery(path, targetAPI)`. This lets a feature in development hit the mock while the rest of the app talks to the real API.
+
+The split is deliberate — it lets frontend work proceed before real endpoints exist, and it gives a known-good fallback for demos.
+
+See [API Layer](/development/api-layer).
+
+---
+
+## Access control
+
+CASL is used end-to-end:
+
+- The `user` slice stores an **ability matrix** — `{ subject: { action: boolean } }` — fetched at sign-in.
+- `buildAbilityFromMatrix()` (in `helpers/rbac.ts`) converts it to a CASL `Ability` instance.
+- The router uses the ability to **filter routes** before mounting them (no flicker of forbidden pages).
+- Components use `useAbility()` and `ability.can('action', 'subject')` for in-page checks (e.g. hide a button).
+- Feature flags follow the same pattern via `featureFlagCan` and `useFeatureFlag()`.
+
+Roles, abilities, users, and feature flags are themselves CRUD resources, editable from `/application/accounts` and `/application/settings/feature-flags` — provided the signed-in user has those permissions.
+
+See [Permissions](/customization/permissions).
+
+---
+
+## MVVM in this codebase
+
+Coreola enforces an MVVM convention because complex pages *with* it are far easier to reason about than complex pages *without* it.
+
+```
+Page (View)
+  ↓ calls once
+useDetailsModel()  ← the Model
+  ↓ exposes
+{ assessment, findings, dialogs, handlers, ... }
+  ↓ passed as props to
+DecisionCardView, FindingsCardView, EvidenceCardView, ...
+```
+
+Hard rules:
+
+- View components must **not** call `useState`, `useDispatch`, RTK Query hooks, or any side-effect hook.
+- The model hook must **not** render JSX.
+- Per-feature subordinate hooks (`useCreateFinding`, `useUpdateEvidenceStatus`) are allowed under the page's `hooks/` folder and called from the top-level model hook.
+
+The Plop generator (`mvvm-component`) scaffolds this layout for you.
+
+---
+
+## Internationalization
+
+`i18next` is configured in `app/i18n.ts` with three chained backends:
+
+- HTTP — fetches `public/locales/<lang>/<namespace>.json` at runtime
+- Local storage — caches translations per-language for instant subsequent loads
+- Optional remote backend if `VITE_APP_I18N_API_URL` is set
+
+Namespaces are derived from feature areas (the route's `namespace`), so a page only loads what it needs. Components call `useTranslation('<namespace>')` and use `t('key')` directly — namespaces are never spelled out in keys.
+
+---
+
+## Theming
+
+Two theme objects (`themes/light` and `themes/dark`) are produced by a factory in `themes/themes.ts`. The active theme is stored in the `app` slice and switched at runtime — no reload, no flash. MUI's `<ThemeProvider>` wraps the tree.
+
+The `app` slice's theme value is persisted, so a user's preference survives reloads.
+
+See [Theme](/customization/theme).
+
+---
+
+## What lives at the root
+
+A few cross-cutting concerns are mounted once in `src/App.tsx`:
+
+- `<ErrorBoundary>` — catches uncaught render errors
+- `<SnackbarProvider>` — registers `snackActions` globally for `baseQuery` and the rest of the app
+- `<ThemeProvider>` — wraps the app in the current MUI theme
+- `<RouterProvider>` — the data router built from `routes.ts`
+- `PrivateRoute` — bootstraps auth/meta/features and gates private routes
+
+These are the only "ambient" infrastructure pieces. Everything else lives inside its feature folder.
+
+---
+
+## Why these choices
+
+- **Redux Toolkit + RTK Query** instead of Zustand/React Query: needed Redux DevTools, persistence, and a single store of truth across charts, dialogs, breadcrumbs, and tables.
+- **MVVM over hooks-only**: pages with 5+ data sources and 3+ dialogs become spaghetti without a clear "model" hook.
+- **Config-driven routing** instead of nested `<Routes>`: the route tree drives navigation, breadcrumbs, ability-based filtering, and lazy loading from one source.
+- **CASL** instead of bespoke role checks: gives a small DSL for "can this user do this?" that is testable and shareable with the backend.
+- **MUI** instead of headless components: design-system tokens, dark mode, and accessibility solved out of the box.
+- **Vite** instead of CRA/Webpack: fast dev server, ES module–native, painless code-splitting.
+
+---
+
+## Next steps
+
+- [Tech Stack](/overview/tech-stack) — every library and what it does
+- [Routing](/development/routing) — the route config in detail
+- [State Management](/development/state-management) — slices, persistence, RTK Query
+- [API Layer](/development/api-layer) — `baseQuery`, error handling, tag invalidation

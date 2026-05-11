@@ -1,0 +1,312 @@
+# Adding a New Module
+
+This page is the **step-by-step recipe** for adding a new business module to Coreola — a fresh feature area with its own API slice, routes, model hooks, views, and (optionally) a dashboard.
+
+Use it when you have read [Architecture](/overview/architecture) and [Modules → Assessments](/modules/assessments) and now need to do the same thing for your domain.
+
+Worked example throughout: building a hypothetical **"Tickets"** module with a list view, a details view, and a queue.
+
+---
+
+## 0. Decide the shape
+
+Before any code, answer four questions:
+
+1. **What does one record look like?** Sketch the entity (`Ticket { id, title, status, priority, owner, due_date, ... }`).
+2. **What status flow does it have?** List the statuses and the legal transitions.
+3. **What side resources hang off it?** (Comments? Attachments? Activity?)
+4. **What screens does it need?** Almost always: list + details. Often: queue. Sometimes: dashboard.
+
+Skipping this step leads to the worst kind of rework — finding out three days in that "ticket" actually needs to be "incident" with a different shape. Sketch first.
+
+---
+
+## 1. Create the API slice
+
+For each new resource, add a folder under `src/api/`:
+
+```
+src/api/tickets/
+├─ tickets.api.ts       # createApi
+├─ tickets.hooks.ts     # Mapped wrappers
+└─ tickets.types.ts     # request/response types
+```
+
+#### `tickets.types.ts`
+
+Define the entity, the response shape, and the input shapes for mutations:
+
+```ts
+export type Ticket = {
+  id: string;
+  title: string;
+  status: 'open' | 'in_progress' | 'resolved' | 'closed';
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  owner_id?: string;
+  due_date?: string;
+  created_at: string;
+};
+
+export type TicketsResponse = { items: Ticket[]; pagination: Pagination };
+export type TicketsPayload  = { _page?: number; _limit?: number; q?: string; status_values?: string[] };
+export type UpdateTicketInput = Partial<Ticket> & { id: string };
+```
+
+#### `tickets.api.ts`
+
+Use `getBaseQuery`:
+
+```ts
+import { createApi } from '@reduxjs/toolkit/query/react';
+import getBaseQuery from 'helpers/baseQuery';
+
+export const ticketsApi = createApi({
+  reducerPath: 'ticketsApi',
+  baseQuery: getBaseQuery('/tickets', 'MOCKUP_API'),
+  tagTypes: ['Ticket'],
+  endpoints: (builder) => ({
+    getTickets: builder.query<TicketsResponse, TicketsPayload>({
+      query: (params) => ({ url: '', params }),
+      providesTags: (result) =>
+        result
+          ? [...result.items.map(({ id }) => ({ type: 'Ticket' as const, id })),
+             { type: 'Ticket', id: 'LIST' }]
+          : [{ type: 'Ticket', id: 'LIST' }],
+    }),
+    getTicket: builder.query<Ticket, string>({
+      query: (id) => ({ url: `/${id}` }),
+      providesTags: (_res, _err, id) => [{ type: 'Ticket', id }],
+    }),
+    updateTicket: builder.mutation<Ticket, UpdateTicketInput>({
+      query: ({ id, ...patch }) => ({ url: `/${id}`, method: 'PUT', body: patch }),
+      invalidatesTags: (_res, _err, { id }) => [{ type: 'Ticket', id }, { type: 'Ticket', id: 'LIST' }],
+    }),
+    // create / delete similar
+  }),
+});
+
+export const { useGetTicketsQuery, useGetTicketQuery, useUpdateTicketMutation } = ticketsApi;
+```
+
+#### `tickets.hooks.ts`
+
+`Mapped` wrappers if the server shape needs UI massaging. Skip if not.
+
+#### Wire into the store
+
+Edit `src/app/reducers.ts` and `src/app/store.ts` to include `ticketsApi.reducer` and `ticketsApi.middleware`. See [State Management → Adding an RTK Query slice](/development/state-management).
+
+---
+
+## 2. Mock the endpoints
+
+If you are running against the json-server mock backend:
+
+1. Add seed data — either fixtures in `json-server/data/api/tickets.json` or a generator in `json-server/generators/tickets.cjs`.
+2. Register custom endpoints in `json-server/endpoints/` if any route needs more than default CRUD (e.g., aggregations, status transitions).
+3. Add the resource to the permission rules in `json-server/server.cjs` (`tickets: 660`).
+4. Restart `npm run json-server`.
+
+See [Mock Backend](/development/mock-backend) for the full layout.
+
+---
+
+## 3. Add abilities
+
+If the module needs permission gating:
+
+1. Add a `ticket` ability in `json-server/data/api/abilities.json` (`{ key: 'ticket', name: 'Ticket', read, create, update, delete: true }`).
+2. Add it to relevant roles in `json-server/data/api/roles.json`.
+3. The frontend picks it up automatically — no `rbac.ts` changes needed. See [Permissions](/customization/permissions).
+
+---
+
+## 4. Scaffold the feature folder
+
+Use Plop:
+
+```bash
+npm run plop
+# Pick: mvvm-component
+# Component name: List
+# Base path: src/features/collections/tickets
+```
+
+This generates the canonical MVVM layout:
+
+```
+src/features/collections/tickets/list/
+├─ List.tsx              # the View
+├─ list.types.ts
+├─ list.styled.ts
+├─ hooks/useListModel.ts
+└─ views/ListView.tsx
+```
+
+Repeat for `Details`, `Queue`, and any other top-level page.
+
+---
+
+## 5. Wire the model hook
+
+`useListModel.ts` is where the page's logic lives. The canonical shape:
+
+```ts
+export default function useListModel() {
+  const navigate = useNavigate();
+  const tableId  = 'tickets-list';
+
+  // 1. Filters
+  const { filters } = useTicketFilters();
+
+  // 2. Server-paginated table state
+  const { tableState, isHydrated, totalRows, serverPagination, queryParams } =
+    useServerPaginatedTable({ tableId, filters });
+
+  // 3. Data
+  const { data, isLoading } = useGetTicketsQuery(queryParams, { skip: !isHydrated });
+
+  // 4. Columns
+  const { columns } = useTicketColumns();
+
+  // 5. Actions
+  const onRowClick = (id: string) => navigate(`/collections/tickets/details/${id}`);
+
+  // 6. Export (optional)
+  const ability = useAbility();
+  const canExport = ability.can('read', 'ticket') && useFeatureFlag('export');
+  const exportAllRows = useExportAllRows({ /* ... */ });
+
+  return { tableId, data, isLoading, columns, filters, serverPagination, onRowClick, canExport, exportAllRows };
+}
+```
+
+`ListView.tsx` is then a thin renderer:
+
+```tsx
+const { tableId, data, isLoading, columns, filters, serverPagination, onRowClick, canExport, exportAllRows } = useListModel();
+
+return (
+  <Table<Ticket>
+    id={tableId}
+    data={data?.items}
+    loading={isLoading}
+    columns={columns}
+    filters={filters}
+    serverPagination={serverPagination}
+    withSearch withCustomColumns withColumnsResize
+    withExport={canExport}
+    exportAllRows={exportAllRows}
+    getRowProps={(row) => ({ onClick: () => onRowClick(row.id) })}
+    cardProps={{ variant: 'outlined', cardHeaderProps: { title: t('Tickets') } }}
+  />
+);
+```
+
+#### Sibling hooks
+
+For non-trivial logic, extract per-concern hooks alongside the model:
+
+- `useTicketFilters` — the filter config (see [Filters](/ui-patterns/filters)).
+- `useTicketColumns` — column definitions.
+- `useChangeTicketStatus` — one mutation + dialog state.
+
+The model hook composes them.
+
+---
+
+## 6. Register the routes
+
+In `src/app/routes.ts`:
+
+```ts
+{
+  path: 'tickets',
+  href: '/collections/tickets',
+  importUrl: 'features/collections/tickets/Tickets',  // section root, if multi-page
+  title: 'Tickets',
+  menu: true,
+  abilityCan: ['ticket.read'],
+  children: [
+    { path: '', redirectTo: '/collections/tickets/list' },
+    { path: 'list',                       importUrl: 'features/collections/tickets/list/List',    title: 'List' },
+    { path: 'details/:ticketId?',         importUrl: 'features/collections/tickets/details/Details', title: 'Details' },
+    { path: 'queue',                      importUrl: 'features/collections/tickets/queue/Queue',  title: 'Queue' },
+  ],
+}
+```
+
+The section root (`Tickets.tsx`) is a `VerticalTabs + Outlet` wrapper. For product modules, copy an existing section root such as `Accounts.tsx`, `Customers.tsx`, or `Assessments.tsx`, then adjust the route title and tab source. Plop's `documentation-section` generator is only for pages under `src/features/documentation`.
+
+For single-page modules with no sub-routes, skip the section root and point `importUrl` directly at the page.
+
+---
+
+## 7. (Optional) Add a dashboard
+
+If your module needs a dashboard:
+
+1. Scaffold `src/features/dashboards/tickets/` with the standard MVVM layout.
+2. Add the aggregation endpoint to your backend (and the mock).
+3. Add the view model hook (`useTicketsDashboardViewModel`) that polls every 60s.
+4. Compose `KpiRowView`, charts, and supporting cards as in [Dashboards](/ui-patterns/dashboards).
+5. Register the route under `/dashboards/tickets`.
+
+---
+
+## 8. (Optional) Add translations
+
+If the module needs new translation keys:
+
+1. Add them to `public/locales/en/<namespace>.json`.
+2. Mirror to `public/locales/uk/<namespace>.json`.
+3. Set `namespace: 'tickets'` on the parent route in `routes.ts`. Components inside it can call `useTranslation('tickets')`.
+
+Use `npm run extract-translations` to find untranslated strings if you have wired the extractor for your project.
+
+---
+
+## 9. Verify the end-to-end flow
+
+A checklist before opening the PR:
+
+- [ ] Type-check passes: `npx tsc --noEmit`.
+- [ ] Lint passes: `npm run lint`.
+- [ ] The new route appears in the sidebar for users with the right ability.
+- [ ] The route is **hidden** for users without the ability.
+- [ ] The list table filters / sorts / paginates against the mock backend.
+- [ ] URL state survives a reload (filters, sort, page).
+- [ ] Mutations show a snackbar on error.
+- [ ] Loading states look like skeletons in the shape of the real content.
+- [ ] An empty state with a meaningful message appears when there are no rows.
+- [ ] Translations exist in both `en` and `uk`.
+
+---
+
+## 10. Where things often go wrong
+
+Common mistakes when adding a module:
+
+- **Forgetting to wire the slice into the store.** RTK Query slices need both their `reducer` and `middleware` registered.
+- **Hardcoding the API URL** instead of going through `getBaseQuery(path, 'MOCKUP_API')`.
+- **Skipping `tagTypes` / `invalidatesTags`.** The cache will be stale after mutations.
+- **Putting fetching in the view.** Move it to the model hook.
+- **Re-implementing the table.** Use the existing `Table` component.
+- **Setting `menu: false` for a route with sub-routes.** The sub-routes will be reachable but the section header will not show in the sidebar.
+- **Forgetting `abilityCan`.** The route is accessible to anyone, which is not what you want for a real feature.
+
+---
+
+## A worked example end-to-end
+
+If you want to see all of this in real code, the closest existing reference is the **Assessments** module — it has the list/details/queue/dashboard quadrilateral fully wired. See [Modules → Assessments](/modules/assessments) for the read-through.
+
+Forking Assessments and renaming `Assessment` → `Ticket` is a reasonable starting point if your domain is similar enough.
+
+---
+
+## Next steps
+
+- [Architecture](/overview/architecture) — the conventions enforced by this recipe
+- [Modules → Assessments](/modules/assessments) — the canonical worked example
+- [API Layer](/development/api-layer), [State Management](/development/state-management) — the underlying machinery

@@ -1,0 +1,14 @@
+# `useAddYupRules`
+
+Side-effectful: registers project-specific Yup methods (`.phone()` and `.strictEmail()`) on the global `Yup.string` schema.
+
+```ts
+useAddYupRules(): void
+```
+
+**Returns** — Nothing.
+
+**Use when** — Call once at app/form initialization so all subsequent Yup schemas can use the custom rules.
+
+- Source: `src/hooks/useAddYupRules.ts`
+- Import: `import useAddYupRules from 'hooks/useAddYupRules'`

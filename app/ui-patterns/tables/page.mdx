@@ -1,0 +1,225 @@
+# Tables
+
+Coreola's `Table` component is the workhorse of the admin UI. It handles server-side pagination, sort, filter, search, column visibility and reorder, CSV export, row selection, and URL-driven state — all configured by props, not by writing a custom table per page.
+
+- Source: `src/components/table/Table.tsx`
+- Types: `src/components/table/table.types.ts`
+- Hooks: `src/hooks/useServerPaginatedTable.ts`, `src/hooks/useServerTableUrlState.ts`, `src/hooks/useExportAllRows.ts`
+- Showcase: `/core-components/data-display/table`
+
+---
+
+## When to use it
+
+Use `Table` for any tabular dataset that:
+
+- Has more than ~20 potential rows (paginate at this point).
+- Has more than 3 columns.
+- Will be filtered, sorted, or searched.
+
+For shorter, simpler lists, reach for `DataList` instead.
+
+---
+
+## The prop surface
+
+The most important props on `Table<TRow>`:
+
+| Prop                  | Purpose                                                              |
+|-----------------------|----------------------------------------------------------------------|
+| `id`                  | Stable identifier used to persist preferences and namespace URL state |
+| `data`                | The current row array (page slice in server mode)                    |
+| `columns`             | Column definitions (see below)                                       |
+| `filters`             | Optional filter config — see [Filters](/ui-patterns/filters) |
+| `serverPagination`    | Pagination metadata from the server                                  |
+| `withCheckbox`        | Adds the row-selection checkbox column                               |
+| `withSearch`          | Adds the search input in the toolbar                                 |
+| `withCustomColumns`   | Adds the column-visibility / reorder menu                            |
+| `withColumnsResize`   | Enables pointer-driven column resize                                 |
+| `withExport`          | Adds the CSV export button (gated by an ability/flag in callers)     |
+| `withPagination`      | Toggle the pagination footer (default `true`)                        |
+| `exportFilename`      | Filename for the CSV export                                          |
+| `exportAllRows`       | Callback that fetches every row for export (server mode)             |
+| `loading`             | Shows skeleton rows + disables interactions                          |
+| `noDataText`          | Empty-state label                                                    |
+| `getRowProps`         | `(row) => { onClick?, rowToggle? }` — per-row interactivity          |
+| `cardProps`           | Surrounding `Card` props (header, variant, etc.)                     |
+| `onTableStateChange`  | Snapshot callback for analytics or persistence                       |
+
+---
+
+## Column definitions
+
+A column is a `HeaderColumn`:
+
+```ts
+{
+  id: 'status',
+  label: 'Status',
+  renderValue: ({ value, row }) => <Status value={value} />,
+  exportValue: ({ value }) => String(value),
+  optional: false,
+  disableSort: false,
+  disableResize: false,
+  ellipsisOverflow: true,
+}
+```
+
+Key fields:
+
+- **`id`** — must match the row property the column reads.
+- **`label`** — header text (run through i18n in callers).
+- **`renderValue`** — receives `{ value, row, size }`, returns a React node. Default renders the raw value.
+- **`exportValue`** — what goes into the CSV cell. Defaults to the rendered string.
+- **`optional`** — when `true`, the column starts hidden and can be enabled from the columns menu.
+- **`disableSort`** / **`disableResize`** — opt out of the corresponding feature for this column.
+- **`ellipsisOverflow`** — wrap long text in a `TextOverflow` truncation by default.
+
+---
+
+## Server pagination
+
+Server mode is the default for production data. The recipe:
+
+1. Call `useServerPaginatedTable` with the table id, filter config, default sort, and default page size.
+2. Pass the resulting `serverPagination` to `<Table />`.
+3. Use the returned `queryParams` in your RTK Query call.
+
+```ts
+const {
+  isHydrated,
+  tableState,
+  totalRows,
+  serverPagination,
+  queryParams,
+} = useServerPaginatedTable({ tableId, filters });
+
+const { data } = useGetAssessmentsQuery(queryParams, { skip: !isHydrated });
+```
+
+The hook waits for stored preferences from `tableColumnsApi` before issuing the first request — that is what `isHydrated` is for. Once hydrated, the URL is the source of truth and the row data follows.
+
+---
+
+## URL-driven state
+
+`useServerTableUrlState` (used internally by `useServerPaginatedTable`) namespaces every state param under the table id. For a table with `id="assessments"`, the URL carries:
+
+| Param                              | Holds                              |
+|------------------------------------|------------------------------------|
+| `assessments.page`                 | 1-based page number                |
+| `assessments.rowsPerPage`          | Page size                          |
+| `assessments.search`               | Free-text search                   |
+| `assessments.sortColumn`           | Sorted column id                   |
+| `assessments.sortDirection`        | `'asc'` or `'desc'`                |
+| `assessments.filter.<filterId>`    | Filter values (comma-separated)    |
+| `assessments.enabledFilters`       | Active optional filters            |
+
+Effect: reloading the page or sharing the URL preserves the exact view. No additional code needed in your page.
+
+---
+
+## Real usage
+
+The assessment list, in `src/features/collections/assessments/list/views/ListView.tsx`:
+
+```tsx
+<Table<AssessmentRow>
+  id={tableId}
+  data={assessments?.items}
+  columns={columns}
+  filters={filters}
+  serverPagination={serverPagination}
+  withSearch
+  withCustomColumns
+  withColumnsResize
+  withExport={canExportTable}
+  exportAllRows={exportAllRows}
+  getRowProps={(row) => ({ onClick: () => navigate(`/details/${row.id}`) })}
+  cardProps={{ variant: 'outlined', cardHeaderProps: { title: t('Assessments') } }}
+/>
+```
+
+The columns and filters are built in a sibling hook (`useAssessmentColumns`, `useAssessmentFilters`) and passed in.
+
+---
+
+## Row selection
+
+Set `withCheckbox` and consume the selection via `onTableStateChange`:
+
+```tsx
+<Table
+  withCheckbox
+  onTableStateChange={({ selected }) => setSelectedIds(selected)}
+  ...
+/>
+```
+
+The selected ids are also reflected in the URL under `<tableId>.selected`, so a refresh keeps the selection.
+
+---
+
+## Row click and inline expansion
+
+Use `getRowProps` to attach behavior per row:
+
+```tsx
+getRowProps={(row) => ({
+  onClick: () => navigate(`/collections/customers/details/${row.id}`),
+})}
+```
+
+For expandable rows, return `rowToggle` with the JSX for the expansion content. The table handles open/close state internally.
+
+---
+
+## CSV export
+
+Two ways:
+
+#### Current page only
+
+Set `withExport` and let the table generate a CSV from `data`. Each column's `exportValue` (or rendered text) becomes a cell.
+
+#### All rows (server mode)
+
+Provide `exportAllRows` — a callback that returns the full result set. The hook `useExportAllRows` builds this on top of the same RTK Query endpoint:
+
+```ts
+const exportAllRows = useExportAllRows({
+  fetch: triggerGetAllAssessments,
+  queryParams,
+});
+```
+
+In both cases, the table writes a UTF-8 BOM and triggers a download with `exportFilename` (or a sensible default).
+
+---
+
+## Persistence beyond the URL
+
+The table also persists per-user preferences (column order, visibility, widths) to the backend via `tableColumnsApi`. This happens on `onTableStateChange`. On next visit, those preferences are merged with the URL state. Users get back what they configured, even from a different machine.
+
+---
+
+## Loading and empty states
+
+- **Loading:** set `loading={true}` while data is fetching. The table renders skeleton rows matching column widths.
+- **Empty:** set `noDataText` to override the default "No data" message. Pair with a contextual `EmptyState` outside the table if the empty result is meaningful (e.g., "no assessments yet — create one").
+
+---
+
+## Anti-patterns
+
+- **Rendering rows manually** with a `map` over data, even "just this one time". If the feature grows, you will rebuild filters/sort/paging/export from scratch.
+- **Stuffing complex logic into `renderValue`**. Memoize or extract a small component instead.
+- **Skipping `id` because the table is "the only one on the page"**. The `id` is required for URL state and persistence — set it.
+- **Hard-coding column widths**. Let the table size them; use `disableResize` only if a column must be a fixed shape.
+
+---
+
+## Next steps
+
+- [Filters](/ui-patterns/filters) — filter config and active-filter UI
+- [Components → Table](/design-system/components) — quick reference in the component inventory

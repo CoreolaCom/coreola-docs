@@ -1,0 +1,163 @@
+# Empty States
+
+"No data" is a state, not an accident. Coreola has one component for it — `EmptyState` — and a small set of rules about when and how to use it.
+
+- Source: `src/components/emptyState/EmptyState.tsx`
+- Showcase: `/core-components/feedback-states/empty-state`
+
+---
+
+## The three flavors of empty
+
+There are three reasons a list or surface is empty. Each gets a different treatment:
+
+| Cause                                              | What the user should see                                  |
+|----------------------------------------------------|-----------------------------------------------------------|
+| The dataset has no records yet (first run)         | "Nothing here yet" + a primary action to create one        |
+| Filters or search ruled everything out             | "No results match" + an action to clear filters or search  |
+| Permission or access blocks a non-empty dataset    | "You do not have access" — no create action                |
+
+Same `EmptyState` component; different content. Confusing these is the most common empty-state bug.
+
+---
+
+## The component
+
+`EmptyState` accepts:
+
+```ts
+{
+  icon?:        ReactNode;      // illustration, default = built-in Empty glyph
+  title?:       string;         // headline, default "No data available"
+  description?: string;         // sub-text, optional
+  action?:      ReactNode;      // single CTA, optional
+  titleTypographyProps?:       TypographyProps;
+  descriptionTypographyProps?: TypographyProps;
+}
+```
+
+A typical usage:
+
+```tsx
+<EmptyState
+  title={t('No assessments yet')}
+  description={t('Create your first assessment to get started.')}
+  action={<Button variant="contained" onClick={onCreate}>{t('New assessment')}</Button>}
+/>
+```
+
+The default icon is the custom `Empty` SVG (`src/assets/icons/empty.svg` via `src/components/icons/Empty.tsx`). Override with a domain-relevant glyph when it helps the message land.
+
+---
+
+## Where empty states appear
+
+#### Inside a `Table`
+
+The table renders its own empty state with `noDataText` when `data` is an empty array. Use this for "no results matching filters" — it sits inside the table chrome where the data would be.
+
+```tsx
+<Table noDataText={t('No assessments match your filters')} ... />
+```
+
+For first-run empty (the table is empty because the dataset is empty), prefer an `EmptyState` **outside** the table — at the page level — with a CTA to create the first record. This is clearer than an empty table with a "create" hint hidden inside.
+
+#### Inside a `Card`
+
+When a card has nothing to show (no recent activity, no notifications), render `<EmptyState>` as the card content with smaller typography:
+
+```tsx
+<EmptyState
+  title={t('No recent activity')}
+  titleTypographyProps={{ variant: 'body2' }}
+/>
+```
+
+#### As a full page
+
+When a permission check fails or a deep link points at nothing (e.g., `/collections/assessments/details/<nonexistent>`), render `<EmptyState>` as the page body with a back link as `action`. Pages that 404 hit `Error404`, which uses the same component.
+
+---
+
+## Writing empty state copy
+
+Three lines you write — they matter. Some rules:
+
+1. **Title states what is missing**, not what to do.
+   - Good: "No findings yet."
+   - Bad: "Create a finding."
+
+2. **Description explains why and what next.** One sentence.
+   - Good: "Findings are added by the assessor during review. None have been created yet."
+   - Bad: "There is currently no data available in this section of the application."
+
+3. **Action is concrete and specific.**
+   - Good: "Create finding"
+   - Bad: "Get started"
+
+4. **Different reasons → different copy.**
+   - First-run vs no-results-after-filter should read differently. Detect which case applies and branch.
+
+5. **Translate everything.** All three strings go through `t()`.
+
+---
+
+## Branching first-run vs no-results
+
+Most lists need to differentiate two reasons. The model hook is the right place:
+
+```ts
+const isFiltered = Object.values(filtersState.values).some((v) => v.length) || !!search;
+const emptyState = data?.items.length === 0
+  ? (isFiltered ? 'no-results' : 'first-run')
+  : null;
+```
+
+Then in the view:
+
+```tsx
+{emptyState === 'first-run' && (
+  <EmptyState title={t('No assessments yet')} ... action={<Button ...>{t('New assessment')}</Button>} />
+)}
+{emptyState === 'no-results' && (
+  <EmptyState title={t('No assessments match your filters')} ... action={<Button onClick={onClearFilters}>{t('Clear filters')}</Button>} />
+)}
+```
+
+This is small enough to inline; do not abstract it into a wrapper component.
+
+---
+
+## Icon choices
+
+For domain-relevant empties, override the icon to make the empty state feel intentional rather than generic:
+
+| Context                | Icon                                    |
+|------------------------|-----------------------------------------|
+| Default                | `Empty` (custom)                        |
+| No search results      | `SearchOffOutlinedIcon`                 |
+| No filter results      | `FilterAltOffOutlinedIcon`              |
+| No notifications       | `NotificationsNoneOutlinedIcon`         |
+| Permission denied      | `LockOutlinedIcon`                      |
+| Network error fallback | `CloudOffOutlinedIcon`                  |
+| 404 / not found        | The default `Empty` plus a back link    |
+
+The icon is meant to reinforce the message at a glance — not decorate.
+
+---
+
+## What NOT to do
+
+- **Center-screen spinner for empty data.** That is a loading state. Empty is not a loading state.
+- **Animated illustrations.** They draw the eye to "nothing", which is rude. Keep the icon static.
+- **"Oops!" or apologetic copy.** Empty is not an error. State it plainly.
+- **No action at all when one is obvious.** "No customers yet" without a "New customer" button forces the user to remember where the button lives elsewhere.
+- **One empty state for all reasons.** Pick the right one.
+
+---
+
+## Next steps
+
+- [Loading States](/ui-patterns/loading-states) — skeletons and progress indicators
+- [Notifications](/ui-patterns/notifications) — toasts for transient feedback
+- [Components → EmptyState](/design-system/components) — quick reference

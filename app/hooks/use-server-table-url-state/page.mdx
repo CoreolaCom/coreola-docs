@@ -1,0 +1,14 @@
+# `useServerTableUrlState`
+
+Stores a table's pagination, search, sort, filters, and selection state in URL params, scoped by table ID so multiple tables can coexist on one page.
+
+```ts
+useServerTableUrlState<T>(props): Readonly<UseServerTableUrlStateResponse<T>>
+```
+
+**Returns** — Readonly table state, derived query params, and callbacks for updates.
+
+**Use when** — As the foundation for any table whose state should survive reloads and be shareable via URL.
+
+- Source: `src/hooks/useServerTableUrlState.ts`
+- Import: `import useServerTableUrlState from 'hooks/useServerTableUrlState'`

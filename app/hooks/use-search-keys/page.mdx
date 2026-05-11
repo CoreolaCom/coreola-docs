@@ -1,0 +1,14 @@
+# `useSearchKeys`
+
+Parses the current location search string into both the native `URLSearchParams` instance and a plain object snapshot.
+
+```ts
+useSearchKeys(): { searchParams: URLSearchParams; searchKeys: Record<string, string> }
+```
+
+**Returns** — `{ searchParams: URLSearchParams; searchKeys: Record<string, string> }`.
+
+**Use when** — When you want easy property access to query params alongside the full URLSearchParams API.
+
+- Source: `src/hooks/useSearchKeys.ts`
+- Import: `import useSearchKeys from 'hooks/useSearchKeys'`

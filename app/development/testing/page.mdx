@@ -1,0 +1,263 @@
+# Testing
+
+Coreola is set up for **Vitest + React Testing Library** with minimal infrastructure and a single sample test. The setup is intentionally lean — the conventions matter more than the volume.
+
+- Runner: `vitest`
+- Library: `@testing-library/react`, `@testing-library/user-event`, `@testing-library/jest-dom`
+- Config: `vitest.config.js`
+- Setup: `src/setupTests.ts`
+- Sample: `src/App.test.tsx`
+
+---
+
+## Running tests
+
+| Script              | What it does                                            |
+|---------------------|---------------------------------------------------------|
+| `npm test`          | Run the suite once (used in CI and pre-commit)          |
+| `npm run test:watch`| Watch mode — reruns affected tests on save              |
+| `npm run test:ci`   | One-shot run with JUnit reporter + coverage             |
+
+The CI script writes JUnit to `./junit.xml` and emits text coverage. Wire this into your CI tool for test result reporting.
+
+---
+
+## What is configured
+
+From `vitest.config.js`:
+
+- **Environment:** `jsdom` (so React can render).
+- **`setupFiles`:** `./src/setupTests.ts`.
+- **Coverage:** `v8` provider via `@vitest/coverage-v8`, reporter `['text']`.
+- **Timeouts:** test 30s, hook 30s, teardown 10s — generous to absorb network mocks and event timing.
+- **Isolation:** `pool: 'forks'`, `isolate: true` — each test file runs in its own process for clean module state.
+- **Aliases:** the full app alias set plus a few test-only ones (`componentsDS`, `docs`, `routes`, `types`).
+
+From `src/setupTests.ts`:
+
+```ts
+import '@testing-library/jest-dom';
+```
+
+That single import enables matchers like `toBeInTheDocument`, `toHaveTextContent`, `toBeDisabled`, etc.
+
+---
+
+## The sample test
+
+`src/App.test.tsx` is the only existing test today. It is intentionally minimal — a render smoke test:
+
+```tsx
+import { render, screen } from '@testing-library/react';
+import App from './App';
+
+test('renders learn react link', () => {
+  render(<App />);
+  const linkElement = screen.getByText(/learn react/i);
+  expect(linkElement).toBeInTheDocument();
+});
+```
+
+Treat this as the seed. The pattern below applies to every test you add.
+
+---
+
+## The canonical test pattern
+
+A Coreola test of any component looks like:
+
+```tsx
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import MyComponent from './MyComponent';
+
+describe('MyComponent', () => {
+  it('renders the label', () => {
+    render(<MyComponent label="Hello" />);
+    expect(screen.getByText('Hello')).toBeInTheDocument();
+  });
+
+  it('calls onClick when activated', async () => {
+    const onClick = vi.fn();
+    render(<MyComponent label="Hello" onClick={onClick} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hello' }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+});
+```
+
+Three rules:
+
+1. **Render the component.** Use `render` from `@testing-library/react`.
+2. **Find elements by role or accessible name.** `getByRole`, `getByLabelText`, `getByText`. Avoid `getByTestId` unless nothing else fits.
+3. **Drive interactions through `userEvent`.** Not `fireEvent` — `userEvent` simulates the full event sequence (pointer, focus, key) the way a user produces it.
+
+---
+
+## Where tests live
+
+Co-locate tests with the file under test:
+
+```
+src/components/card/
+├─ Card.tsx
+├─ Card.test.tsx     ← here
+└─ card.types.ts
+```
+
+`vitest` discovers `*.test.ts`, `*.test.tsx`, `*.spec.ts`, `*.spec.tsx` automatically.
+
+For shared utilities, the same rule:
+
+```
+src/helpers/
+├─ phrase.ts
+└─ phrase.test.ts
+```
+
+---
+
+## Testing components that use Redux / RTK Query
+
+Wrap the render in a `<Provider>` with a **store built for the test**:
+
+```tsx
+import { Provider } from 'react-redux';
+import { configureStore } from '@reduxjs/toolkit';
+import rootReducer from 'app/reducers';
+
+const renderWithStore = (ui, preloadedState = {}) =>
+  render(
+    <Provider store={configureStore({ reducer: rootReducer, preloadedState })}>
+      {ui}
+    </Provider>
+  );
+```
+
+Reach for **MSW** (Mock Service Worker) when you need to mock HTTP responses for RTK Query — it intercepts fetch at the network layer, so the slice behaves as it would in production.
+
+This is not yet wired into the repo. Add it when the first feature test needs it.
+
+---
+
+## Testing components that use i18n
+
+Two options:
+
+#### Option A — wrap in the real `i18n` instance
+
+```tsx
+import { I18nextProvider } from 'react-i18next';
+import i18n from 'app/i18n';
+
+render(
+  <I18nextProvider i18n={i18n}>
+    <Component />
+  </I18nextProvider>
+);
+```
+
+Useful when the test depends on translated text.
+
+#### Option B — mock `useTranslation` to return keys
+
+```ts
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key) => key }),
+}));
+```
+
+Useful when the test is about behavior and you want stable, predictable strings.
+
+---
+
+## Testing model hooks directly
+
+Model hooks are pure logic plus side effects — they are good targets for unit tests.
+
+```tsx
+import { renderHook, act } from '@testing-library/react';
+import useDetailsModel from './useDetailsModel';
+
+it('opens the new finding dialog', () => {
+  const { result } = renderHook(() => useDetailsModel(), { wrapper });
+  act(() => result.current.openDialog.newFinding());
+  expect(result.current.dialogs.newFindingOpen).toBe(true);
+});
+```
+
+The `wrapper` provides Redux + i18n + router context as needed.
+
+---
+
+## Coverage
+
+Coverage is generated when you run `npm run test:ci`. Threshold targets to aim for in a new project:
+
+- **Shared components (`src/components/`)** — high. They are reused; regressions cascade.
+- **Helpers (`src/helpers/`)** — high. They are pure; tests are cheap.
+- **Model hooks** — medium-to-high. Cover the state transitions and the dialog/error paths.
+- **Views** — low. Snapshot tests fight every refactor. Cover the **outcomes** via the model hook's surface and the component-level interaction tests.
+
+Avoid the trap of optimizing for the coverage number — high coverage of trivial code is worse than thoughtful coverage of risky code.
+
+---
+
+## What NOT to test
+
+- **Trivial getters and setters.** Type errors catch most.
+- **MUI internals.** Test that your wrapping works, not that MUI's button responds to clicks.
+- **Render output verbatim.** Snapshot tests rot. Test behavior, not markup.
+- **Generated RTK Query hooks.** They are produced by RTK — test the *use of* them via integration tests with MSW.
+- **The router.** React Router is tested upstream.
+
+---
+
+## What to test
+
+- **Model hook state transitions.** Open dialog, close dialog, submit, error path.
+- **Forms.** Validation rules, server-error mapping via `useFieldsFromError`, submit handlers.
+- **Tables.** Filter changes update queryParams, sort changes update URL, pagination clamps correctly.
+- **Helpers.** Especially anything with edge cases (`phrase`, `dirtyData`, `fieldsFromError`).
+- **Components with non-trivial accessibility.** Confirm `aria-*` and roles.
+
+---
+
+## Pre-commit and CI
+
+Pre-commit (`.husky/pre-commit`) runs `lint-staged` — Prettier + ESLint. **It does not run tests** by default. This keeps commits fast on large repos.
+
+Consider adding `npm test` to a pre-push hook if your team values local test runs before pushing. Otherwise rely on CI to gate.
+
+---
+
+## Anti-patterns
+
+- **`getByTestId` everywhere.** Use accessible queries first; `data-testid` is a last resort.
+- **`fireEvent` for user actions.** Use `userEvent`. It triggers focus, key, pointer events the way a user does.
+- **Skipping `await` on user events.** `userEvent` is async; missing `await` produces flaky tests.
+- **Mocking the world.** Each mock is a fork in reality; keep them local and few.
+- **Snapshot tests on dynamic content.** They flap on every change. Snapshot only when the output is stable and meaningful.
+- **Testing private implementation details.** Test through the public surface; refactors should not break tests if behavior is unchanged.
+
+---
+
+## Growing the suite
+
+A pragmatic order to grow test coverage from the current baseline:
+
+1. **Helpers first.** `src/helpers/*` is pure and fast — easy wins.
+2. **Shared components next.** Coverage here protects every feature that uses them.
+3. **Model hooks per feature.** Test the state machine of `useDetailsModel`, `useQueueModel`, etc.
+4. **Form view models.** Validation rules and error mapping.
+5. **Integration tests with MSW** for the critical end-to-end flows — sign in, create assessment, change status.
+
+A team can ship the first 4 tiers steadily over weeks. The fifth tier (MSW) requires upfront infrastructure but pays off on every release.
+
+---
+
+## Next steps
+
+- [Coding Conventions](/development/coding-conventions) — file naming applies to tests too
+- [API Layer](/development/api-layer) — what to mock when testing slices
+- [Storybook](/development/storybook) — optional interaction-test path after Storybook is initialized

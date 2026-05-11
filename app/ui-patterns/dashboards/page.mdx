@@ -1,0 +1,178 @@
+# Dashboards
+
+A dashboard in Coreola is a summary view — KPIs, charts, and a few supporting widgets — built on a fixed shape. Two reference dashboards ship in the box: **Application** and **Assessments**.
+
+- Source: `src/features/dashboards/application/`, `src/features/dashboards/assessments/`
+- Charts: `@nivo/line`, `@nivo/pie`, `@nivo/bar`
+
+---
+
+## The shape
+
+A dashboard is composed of four optional zones:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ KPI row  (3–4 metric cards across the top)               │
+├────────────────────────────────────┬─────────────────────┤
+│                                    │                     │
+│  Primary chart                     │  Side card          │
+│  (line / area / bar)               │  (pie / list)       │
+│                                    │                     │
+├────────────────────────────────────┴─────────────────────┤
+│ Secondary table or activity timeline                     │
+└──────────────────────────────────────────────────────────┘
+```
+
+Not every dashboard uses every zone, but the order is fixed: **KPIs first, then a primary chart, then supporting cards, then a table or timeline**. This is what makes the dashboards feel like part of the same product instead of separate experiments.
+
+---
+
+## The canonical example
+
+`src/features/dashboards/application/Application.tsx` is the reference implementation. Its view model — `useApplicationDashboardViewModel` — fetches one aggregated endpoint (`useGetApplicationDashboardQueryMapped`) with `pollInterval: 60` seconds, then exposes derived data to the view:
+
+```ts
+const {
+  isLoading,
+  hasError,
+  summaryCards,         // KPI row
+  customerGrowthSeries, // line chart data
+  rolesDistribution,    // pie chart data
+  recentActivity,       // timeline items
+  recentCustomers,      // table rows
+} = useApplicationDashboardViewModel();
+```
+
+The view passes each slice to a dedicated card view:
+
+- `KpiRowView` — the KPI row
+- `CustomerActivityCardView` — the primary line chart
+- `CustomerRolesCardView` — the pie chart
+- `RecentActivityCardView` — the activity timeline
+- `RecentCustomersTableView` — the supporting table
+
+Same MVVM rules as details pages: views are pure, the model owns logic.
+
+---
+
+## KPI cards
+
+Each metric is a `DashboardSummaryCard`:
+
+```ts
+{
+  id: string;
+  label: string;             // e.g., "Active customers"
+  value: string | number;    // formatted display value
+  description: string;       // sub-label, e.g., "last 30 days"
+  cue?: string;              // trend, e.g., "+12%"
+  tone?: 'up' | 'down' | 'success' | 'info' | 'error';
+}
+```
+
+The `KpiCard` component (`src/components/kpiCard/`) renders this shape directly. Use it for any "single number that matters" — counts, totals, deltas. Avoid using a card for compound metrics; if you need two numbers side by side, that is `StatsLine`.
+
+`tone` drives a small color cue (green for "up"/"success", red for "down"/"error", neutral otherwise). The cue should reinforce, never carry, the meaning — "12%" should also say whether that is good or bad in the label/description.
+
+---
+
+## Charts
+
+Coreola charts use `@nivo/*` (line, pie, bar). They are themed against the MUI palette so they switch on light/dark automatically.
+
+#### Line / area charts
+
+Data shape:
+
+```ts
+{
+  id: 'Customers',
+  data: [{ x: '2026-01-01', y: 124 }, ...]
+}
+```
+
+Pass an array of series to `<ResponsiveLine>`. Coreola wraps the chart in a `Card` and pulls colors from `theme.palette.color.chart` (the `ocean` scale) so the chart stays theme-aware.
+
+#### Pie / donut charts
+
+Data shape:
+
+```ts
+[
+  { id: 'admin',  label: 'Admin',  value: 12 },
+  { id: 'viewer', label: 'Viewer', value: 88 },
+]
+```
+
+Use a donut (inner radius > 0) for role/category distributions; pie for share-of-total when the categories are mutually exclusive.
+
+#### Bar charts
+
+Use for ranked or compared categorical data. Same theming approach.
+
+---
+
+## Polling and refresh
+
+Dashboard data is **polled**, not pushed. The Application dashboard polls every 60 seconds via the `pollInterval` option on the RTK Query hook. This is short enough that the data feels live and long enough not to hammer the backend.
+
+If you need true real-time, you would layer a websocket on top — not currently in Coreola, but the model-hook seam is the right place to add it.
+
+---
+
+## Layout
+
+Dashboards use MUI `Grid` for the responsive shape:
+
+```tsx
+<Grid container spacing={3}>
+  <Grid item xs={12}><KpiRowView ... /></Grid>
+  <Grid item xs={12} md={8}><CustomerActivityCardView ... /></Grid>
+  <Grid item xs={12} md={4}><CustomerRolesCardView ... /></Grid>
+  ...
+</Grid>
+```
+
+The KPI row spans full width on every breakpoint. The chart and side card stack on mobile and sit side-by-side from `md` up.
+
+---
+
+## Loading and errors
+
+A dashboard is one page reading one (or few) endpoints. Loading is page-level:
+
+- `isLoading` → show `Skeleton` placeholders in the same grid shape as the real content. Do not show a center-screen spinner.
+- `hasError` → show a single error state with a retry action. Do not render half-filled cards.
+
+This is different from details pages, which load card-by-card. Dashboards are aggregated by design.
+
+---
+
+## When to build a dashboard
+
+A new dashboard makes sense when:
+
+- It summarizes data across **multiple resources**. Single-resource summaries belong in that resource's list page (filter + a header strip).
+- The audience is **operators/managers** looking at trends, not engineers debugging one record.
+- The metrics are stable enough that the shape will not be redesigned every sprint.
+
+If those conditions are not met, a "dashboard" is probably a filtered list with a header — that is fine and easier to maintain.
+
+---
+
+## Anti-patterns
+
+- **One dashboard per resource.** Two dashboards (Application, Assessments) covers the entire app today. Adding more should require justification.
+- **Charts everywhere.** Coreola's dashboards average 2–3 charts. More than that, and the page becomes harder to read than the underlying data.
+- **Real-time tickers.** Polling at 60s is the floor. A KPI that flickers every two seconds is a distraction, not a feature.
+- **Inline data transformations in the view.** The view model is the right place to shape API data into chart series and KPI cards.
+- **Hand-rolled chart components.** Use `@nivo` and theme it.
+
+---
+
+## Next steps
+
+- [Tables](/ui-patterns/tables) — for the supporting table at the bottom of a dashboard
+- [Components → KpiCard, StatsLine](/design-system/components) — quick references
+- [Architecture](/overview/architecture) — where the view model fits in MVVM

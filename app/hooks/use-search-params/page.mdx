@@ -1,0 +1,14 @@
+# `useSearchParams`
+
+Reads and updates URL search params with smart merging: optional offset reset on filter changes, an allowlist of keys to preserve, and a setter returning the resulting URL.
+
+```ts
+useSearchParams(paramsToKeep?: string[]): [Record<string, string>, (args: SetURLParamsProps) => string]
+```
+
+**Returns** — `[currentParams, setter]`.
+
+**Use when** — For any URL-backed form, filter panel, or list view that needs predictable param updates.
+
+- Source: `src/hooks/useSearchParams.ts`
+- Import: `import useSearchParams from 'hooks/useSearchParams'`

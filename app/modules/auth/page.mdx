@@ -1,0 +1,165 @@
+# Auth
+
+The auth module covers the three public flows every admin product needs: sign in, sign up, and password reset request. All three live under `/auth/*` and use the `AuthLayout`.
+
+- Source: `src/features/auth/`
+- Layout: `src/layouts/authLayout/AuthLayout.tsx`
+- API: `src/api/auth/auth.api.ts`
+- Slice: `src/slices/user/user.slice.ts`
+
+---
+
+## Flows at a glance
+
+| Route                  | Component                  | Purpose                                  |
+|------------------------|----------------------------|------------------------------------------|
+| `/auth/sign-in`        | `features/auth/signIn`     | Email + password sign-in                 |
+| `/auth/sign-up`        | `features/auth/signUp`     | Self-service account creation            |
+| `/auth/send-password`  | `features/auth/sendPassword` | Trigger a password recovery email      |
+
+All three routes are marked `public: true` in `routes.ts` so the route guard does not redirect anonymous users away.
+
+---
+
+## Sign in
+
+#### File map
+
+- `signIn/SignIn.tsx` — page container calling `useSignInViewModel()`
+- `signIn/hooks/useSignInViewModel.ts` — model hook
+- `signIn/views/SignInView.tsx` — presentation
+
+#### Fields
+
+- **`email`** — required, validated as an email
+- **`password`** — required, with a visibility toggle (eye icon)
+
+Below the form are two links: "Forgot your password?" → `/auth/send-password`, and "Create an account" → `/auth/sign-up`.
+
+#### Submission
+
+The model hook calls `useLoginUserMutation` (RTK Query, `POST /login`). On success it receives `AuthType` (`{ user, accessToken }`), dispatches `setUser` from `user.slice` through the API endpoint side effect, then navigates to the original requested route or the runtime landing page.
+
+---
+
+## Sign up
+
+#### Fields
+
+- **`first_name`** — required, auto-focused on mount
+- **`last_name`** — required
+- **`email`** — required + email format
+- **`password`** — required, paired with a real-time `PasswordStrength` indicator
+- **`passwordRepeat`** — must match `password`
+
+#### Submission
+
+`useRegisterUserMutation` (RTK Query, `POST /register`) — same response shape as sign-in (`AuthType`). On success, Coreola clears the temporary token state, shows a success snackbar, and redirects the user to `/auth/sign-in`.
+
+The mock backend stores the new user in the running json-server database for the lifetime of that process. See [Installation → Sign in](/getting-started/installation) for the caveat about regeneration.
+
+---
+
+## Send password
+
+#### Fields
+
+- **`email`** — required
+
+#### Submission
+
+`useSendPasswordMutation` (`POST /send-password`). The mock backend does not actually send mail — it returns success. A production wiring would route to your transactional-email provider on the backend.
+
+After submission the page shows a success state and links back to sign-in. The user is **not** signed in by this flow.
+
+---
+
+## API surface
+
+All three flows are RTK Query mutations on `authApi`:
+
+```
+POST /login         → AuthType
+POST /register      → AuthType
+POST /send-password → void
+POST /logout        → void
+PUT  /users/:id     → User    // used by the profile module
+```
+
+Request/response shapes live in `src/api/auth/auth.types.ts`:
+
+```
+LoginInput    { email, password }
+RegisterInput { email, password, first_name, last_name, avatar }
+User          { id, email, first_name, last_name, avatar, suspended, roles, abilities }
+AuthType      { user: User, accessToken: string }
+```
+
+The base URL is `MOCKUP_API` (json-server) in development. Switch to `SYSTEM_API` by wiring the real auth endpoints — see [Environment](/getting-started/environment).
+
+---
+
+## How a session lives
+
+The auth flow leaves three things in Redux:
+
+- **`user.accessToken`** — the bearer token used by `baseQuery` for every subsequent request.
+- **`user.user`** — the user record (name, email, avatar).
+- **`user.user.abilities`** — the CASL matrix used by route guards and `useAbility`.
+
+All three are inside the `user` slice, which is whitelisted in `redux-persist`. A page reload keeps the session alive.
+
+#### Token expiry
+
+`baseQuery` checks responses for `401` and dispatches `setCheckTime()` to trigger a token re-validation. The `checkTokenIsValid` helper (`src/helpers/checkTokenIsValid.ts`) decodes the JWT with `jwt-decode` and compares against `settings.checkTokenInterval` (1 minute by default).
+
+If the token is invalid, the user is forced through a re-sign-in flow.
+
+---
+
+## Logout
+
+Logout is wired as a route (`/user/logout`) and as an action.
+
+The route is a redirect: navigating to `/user/logout` triggers the `logout` action from `user.slice`, which:
+
+1. Wipes the persisted `root` storage via `storage.removeItem('persist:root')`.
+2. Resets all reducers except `app` (so theme and language preferences survive).
+3. Redirects to `/auth/sign-in`.
+
+You can dispatch `logout()` directly from anywhere — for example, on a 401 retry that exhausts itself.
+
+---
+
+## Auto-redirect when already signed in
+
+If a logged-in user navigates to `/auth/sign-in` (e.g., from a stale bookmark), `AuthLayout` notices the existing token and dispatches `logout` before showing the form. This prevents the confusing "I am already logged in but the form says I am not" state.
+
+---
+
+## Adapting auth to a real backend
+
+Three change points:
+
+1. **Endpoint URLs.** Override the `targetAPI` in `authApi` from `MOCKUP_API` to `SYSTEM_API`, then update `VITE_APP_SYSTEM_API_URL` in `.env.local`.
+2. **Response shape.** If your backend uses a different shape for the user or token, adjust `AuthType` in `auth.types.ts` and the mapping in the mutations' `transformResponse`.
+3. **Token storage.** If you need an HTTP-only cookie instead of a bearer token in Redux, replace the `Authorization` header logic in `src/helpers/baseQuery.ts` with `credentials: 'include'`.
+
+The rest of the flow — components, forms, validation, navigation — is backend-agnostic.
+
+---
+
+## Anti-patterns
+
+- **Re-implementing auth flows in feature pages.** All auth is in `src/features/auth/` — feature code should not call `useLoginUserMutation` or set tokens.
+- **Storing the token outside the `user` slice.** It needs to be picked up by `baseQuery` and survive reload — anywhere else and one of those fails.
+- **Skipping the password-strength meter on sign-up.** It is a small UX win for an inexpensive cost.
+- **Auto-logout on every error.** Only 401 triggers re-validation; transient 5xx errors should not log the user out.
+
+---
+
+## Next steps
+
+- [Permissions](/customization/permissions) — how abilities returned from auth gate the UI
+- [API Layer](/development/api-layer) — `baseQuery` and the bearer token
+- [Profile](/modules/profile) — what the user does after signing in

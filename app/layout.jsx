@@ -11,7 +11,12 @@ export const metadata = {
 
 const navbar = (
   <Navbar
-    logo={<b>Coreola</b>}
+    logo={
+      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <img src="/img/logo_filled.svg" alt="" width={22} height={22} />
+        <span>Coreola Docs</span>
+      </span>
+    }
     // ... Your additional navbar options
   />
 );
@@ -36,8 +41,12 @@ export default async function RootLayout({ children }) {
         <Layout
           navbar={navbar}
           pageMap={await getPageMap()}
-          docsRepositoryBase="https://github.com/shuding/nextra/tree/main/docs"
+          docsRepositoryBase="https://github.com/palaemo/coreola-docs/blob/main"
           footer={footer}
+          sidebar={{
+            defaultMenuCollapseLevel: 1,
+            autoCollapse: true,
+          }}
           // ... Your additional layout options
         >
           {children}

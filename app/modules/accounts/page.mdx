@@ -1,0 +1,220 @@
+# Accounts
+
+The accounts module is Coreola's admin surface for **who can do what**. It manages three resources:
+
+- **Users** — the people who can sign in
+- **Roles** — named bundles of abilities
+- **Abilities** — the atomic permission definitions
+
+These three are the editable side of Coreola's RBAC system. The read side (gating routes and components) is covered in [Permissions](/customization/permissions).
+
+- Source: `src/features/application/accounts/`
+- API: `src/api/users/`, `src/api/roles/`, `src/api/abilities/`
+- Routes: `/application/accounts/users`, `/application/accounts/roles`, `/application/accounts/abilities`
+
+---
+
+## Layout
+
+The accounts area is a section with three sub-pages stitched together by `Accounts.tsx` (a `VerticalTabs + Outlet` wrapper). Each tab opens one of the resources.
+
+The route requires at least one of: `account.read`, `role.read`, `ability.read`. The redirect within `Accounts` picks the first tab the user can see based on the abilities they hold.
+
+---
+
+## Users
+
+#### Route
+
+`/application/accounts/users/:userId?`
+
+#### Model hooks
+
+- `useUsers` — list-level concerns: fetching, table state, opening the create dialog, deletion.
+- `useUserDetails` — the per-user form:
+  - User CRUD form (name, email, role assignment)
+  - Suspended toggle (`suspended` field on `User`)
+  - Avatar editor integration via `useAvatarEditor`
+  - Delete dialog
+  - Server-error mapping via `useFieldsFromError`
+
+The list lives in the left tab pane; the right pane shows the selected user's details when `:userId` is present.
+
+#### `User` shape
+
+From `src/api/users/users.types.ts`:
+
+- `id`, `email`, `first_name`, `last_name`, `avatar`
+- `suspended` — boolean flag, soft-disable without deletion
+- `roles[]` — role ids assigned to the user
+- `abilities` — flattened abilities matrix (derived from roles, included for convenience)
+
+#### Suspended vs deleted
+
+A suspended user keeps their record (audit history, references on assessments) but cannot sign in. Deletion is irreversible. Operators should reach for **suspend** by default.
+
+---
+
+## Roles
+
+#### Route
+
+`/application/accounts/roles/:roleId?`
+
+#### Model hooks
+
+- `useRoles` — list of roles, create-new flow, delete.
+- `useRoleDetails` — the per-role form:
+  - Name + description fields.
+  - **Abilities matrix** rendered as `abilityRows` — one row per ability, one checkbox per action (`read`, `create`, `update`, `delete`).
+  - `onToggleAbility(abilityKey, action)` toggles a single cell.
+
+#### `Role` shape
+
+```
+RoleType {
+  id, name, description,
+  abilities: Record<string, RoleAbilityType>
+  // e.g. abilities = {
+  //   "assessment": { read: true, create: true, update: false, delete: false },
+  //   "customer":   { read: true, create: false, update: false, delete: false },
+  // }
+}
+```
+
+A role is essentially **a name + a matrix**. The matrix is what `buildAbilityFromMatrix` turns into a CASL `Ability` at sign-in.
+
+---
+
+## Abilities
+
+#### Route
+
+`/application/accounts/abilities/:abilityId?`
+
+#### Model hooks
+
+- `useAbilities` — list and CRUD.
+- `useAbilityDetails` — the per-ability form:
+  - `key` — the resource key (e.g., `assessment`, `customer`)
+  - `name` — display label
+  - `description` — what this ability covers
+  - Action booleans (`read`, `create`, `update`, `delete`) — the **definition** of which actions are valid for this resource.
+
+#### `Ability` shape
+
+```
+AbilityType {
+  id, key, name, description,
+  read, create, update, delete   // booleans — which actions exist for this resource
+}
+```
+
+An ability is a **definition** of "this resource exists and these actions are meaningful for it". Whether a specific user can do those actions is determined by the **role** that the user holds — see the relationship below.
+
+---
+
+## How users, roles, and abilities relate
+
+```
+Ability        defines    "what actions exist for resource X"
+   ↑
+   │ referenced by
+   │
+Role           grants     "for ability X, this role can read/create/update/delete"
+   ↑
+   │ assigned to
+   │
+User           has        "these roles"
+```
+
+Concretely:
+
+- An **ability** says: "the `assessment` resource has actions `read`, `create`, `update`, `delete`".
+- A **role** says: "for `assessment`, this role can `read` and `create`, but not `update` or `delete`".
+- A **user** has roles. The user's effective permissions are the union of the role matrices.
+
+At sign-in, the backend resolves the user's roles into a flattened matrix on `user.abilities` so the frontend does not have to do the join.
+
+---
+
+## Editing the matrix — UX details
+
+Both `useRoleDetails` and `useAbilityDetails` use `abilityRows` / `abilityActionRow` patterns to render the matrix as a checkbox grid:
+
+```
+                read     create   update   delete
+assessment      ☑        ☑        ☐        ☐
+customer        ☑        ☐        ☐        ☐
+user            ☐        ☐        ☐        ☐
+```
+
+The grid is editable inline. Each toggle dispatches a single mutation against the role/ability — no "Save" button required. This gives operators fast iteration without ceremony, and the audit log captures each toggle as its own activity.
+
+A common alternative is a draft-and-save pattern. Coreola chose inline because admin operations on roles are deliberate and low-frequency — the operator wants the toggle to be the action, not a step toward an action.
+
+---
+
+## Permissions for the permissions UI
+
+Yes, it's recursive. The route gates are:
+
+- `/application/accounts/users` — requires `account.read`
+- `/application/accounts/roles` — requires `role.read`
+- `/application/accounts/abilities` — requires `ability.read`
+
+So the ability to **manage** abilities is itself an ability. Bootstrapping: the seeded admin user (`json-server/data/api/users.json`) has all three.
+
+---
+
+## API
+
+Three slices:
+
+#### `usersApi`
+
+- `GET/POST/PUT/DELETE /users` — standard CRUD plus pagination, sort, filter.
+
+#### `rolesApi`
+
+- `GET/POST/PUT/DELETE /roles` — CRUD over the role + matrix.
+
+#### `abilitiesApi`
+
+- `GET/POST/PUT/DELETE /abilities` — CRUD over the ability definitions.
+
+All three follow the same RTK Query patterns as the rest of the app. Custom `Mapped` hooks normalize names and the matrix shape for the UI.
+
+---
+
+## Migration paths
+
+If your product uses a different RBAC model:
+
+#### Flat permissions (no roles)
+
+Skip the `roles` resource. Assign abilities directly on the user. Keep `usersApi` and `abilitiesApi`, drop `rolesApi`.
+
+#### Hierarchical roles (parent/child)
+
+Add a `parent_id` field to `RoleType` and resolve permissions transitively at sign-in (the backend does this — frontend keeps reading the flat matrix on the user).
+
+#### External IDP (Okta, Auth0, Keycloak)
+
+Replace the sign-in mutation with an OIDC handshake. The user's role assignment becomes a claim on the token; the matrix can still be computed server-side and shipped on `user.abilities`. The accounts UI then becomes read-only or disappears, depending on whether you let admins edit the IDP from inside the product.
+
+---
+
+## Anti-patterns
+
+- **Hardcoding role names in components.** Always check abilities, never `user.roles.includes('admin')`. Roles are data; abilities are the API.
+- **Building a "permissions" tab elsewhere.** The accounts module is the single source of UI truth.
+- **Bypassing CASL for "convenience" checks.** Use `useAbility().can(action, subject)` everywhere — even for cosmetic UI changes.
+
+---
+
+## Next steps
+
+- [Permissions](/customization/permissions) — how the resulting matrix gates the UI
+- [Auth](/modules/auth) — where the matrix arrives in the user slice
+- [Tables](/ui-patterns/tables) — the underlying table for the user/role/ability lists

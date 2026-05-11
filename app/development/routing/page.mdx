@@ -1,0 +1,226 @@
+# Routing
+
+Coreola's routing is **config-driven**. The entire route tree is declared as a single array in `src/app/routes.ts`. `src/app/router.tsx` walks that array at startup and builds a React Router v7 data router from it.
+
+The benefit: navigation, breadcrumbs, sidebar menu, ability filtering, feature-flag filtering, and code splitting all read from one source of truth.
+
+- Source: `src/app/routes.ts`, `src/app/router.tsx`, `src/app/app.types.ts`
+- Hooks: `src/hooks/useRoutes.ts`, `useCurrentRoute.ts`, `useSiblingsRoutes.ts`, `useGetMenuTree.tsx`
+
+---
+
+## The `Route` shape
+
+From `src/app/app.types.ts`:
+
+```ts
+type Route = {
+  alias?: string;
+  path: string;
+  href?: string;
+  abilityCan?: string[];
+  featureFlagCan?: string[];
+  icon?: ReactNode;
+  iconRef?: typeof SvgIcon;
+  title?: string;
+  menu?: boolean;
+  group?: string;
+  public?: boolean;
+  values?: Record<string, readonly string[]>;
+  children?: Route[];
+  namespace?: string;
+  importUrl?: string;
+  outletImportUrl?: string;
+  redirectTo?: string;
+  secondaryAction?: ReactNode;
+  onClick?: (event: SyntheticEvent) => void;
+  menuProps?: ListItemProps & NavLinkProps;
+  active?: boolean;
+};
+```
+
+Each field has a single role. The most important:
+
+| Field             | Purpose                                                              |
+|-------------------|----------------------------------------------------------------------|
+| `path`            | URL segment relative to the parent                                   |
+| `href`            | Absolute URL — used by the menu and breadcrumbs (`path` is relative) |
+| `importUrl`       | Lazy-component path resolved by Vite's `import.meta.glob`            |
+| `redirectTo`      | Turns the entry into a redirect via a data-router loader             |
+| `abilityCan`      | CASL ability requirements                                            |
+| `featureFlagCan`  | Feature flag keys required                                           |
+| `children`        | Nested routes                                                        |
+| `menu`            | Whether to show in the sidebar                                       |
+| `group`           | Sidebar group (`pages`, `components`, `resources`, `bottom`)         |
+| `iconRef`         | Sidebar icon component reference                                     |
+| `title`           | Display label                                                        |
+| `namespace`       | i18n namespace loaded for the route subtree                          |
+| `values`          | Constrain a path parameter to specific values                        |
+| `public`          | Allow unauthenticated access (auth routes)                           |
+
+---
+
+## How `importUrl` works
+
+Route components are loaded lazily. `routes.ts` does **not** import them — it references a path:
+
+```ts
+{
+  path: 'introduction',
+  importUrl: 'features/documentation/gettingStarted/introduction/Introduction',
+  ...
+}
+```
+
+`router.tsx` has a glob:
+
+```ts
+const lazyModules = import.meta.glob<{ default: ComponentType<object> }>('../**/*.tsx');
+```
+
+When it sees an `importUrl`, it looks up `../${importUrl}.tsx` in the glob and assigns the matched loader to React Router's `lazy` field. Vite splits each glob match into its own chunk, so the user downloads only the code for the page they visit.
+
+If you add a new page:
+
+1. Create the `.tsx` file inside `src/`.
+2. Add a route entry with `importUrl` pointing at the file (without the `.tsx` extension, relative to `src/`).
+3. Done — no manual import, no manual `lazy()` wrapper.
+
+---
+
+## Redirects
+
+A route with `redirectTo` becomes a redirect entry. The router builder:
+
+- Promotes a `path: ''` redirect to an **index route** on the parent (via React Router's `index: true`).
+- Wraps the redirect in a `loader` that calls `redirect(target)`.
+
+For index redirects, the target is **resolved at navigation time** against the user's abilities and active feature flags. Example: the application root redirect:
+
+```ts
+{
+  path: '/',
+  importUrl: 'layouts/dashboardLayout/DashboardLayout',
+  children: [
+    { path: '', abilityCan: ['dashboard.read'],                     redirectTo: '/dashboards/application' },
+    { path: '', abilityCan: ['settings.read', 'account.read', ...], redirectTo: '/application' },
+    { path: '', abilityCan: ['customer.read', 'segment.read'],      redirectTo: '/collections' },
+    { path: '', redirectTo: '/user/profile' },
+  ],
+}
+```
+
+The first redirect whose abilities are satisfied wins. This means a user with `dashboard.read` lands on `/dashboards/application`; without it, they fall through to whatever they can see.
+
+The runtime resolution lives in `getRuntimeIndexRedirectTarget` (`router.tsx`) — it pulls the current user from the store, builds the CASL ability and feature flag map, and picks the first redirect the user is allowed to follow.
+
+---
+
+## Ability and feature-flag filtering
+
+`abilityCan` and `featureFlagCan` are **AND across the array** (the user needs **all** listed abilities). Filtering happens in two places:
+
+#### Route tree (navigation guard)
+
+`filterRoutesByAbility` (in `src/helpers/rbac.ts`) is called by `getRuntimeIndexRedirectTarget` and by `useGetMenuTree`. It prunes the route tree to what the user can see.
+
+#### Component rendering (defense in depth)
+
+`PrivateRoute` and per-component `useAbility()` checks make sure that even if a URL is reached directly, the content respects the user's abilities. The route tree filter handles the menu and redirects; the component checks handle direct navigation.
+
+---
+
+## Menu generation
+
+The sidebar is **not hand-rolled** — `useGetMenuTree(routes)` (`src/hooks/useGetMenuTree.tsx`) builds it from the route config:
+
+1. Filter routes by ability and feature flag.
+2. Drop entries with `menu: false`.
+3. Group by `group` (`pages`, `components`, `resources`, `bottom`).
+4. Pull `iconRef`, `title`, `href` from each route.
+
+Adding a sidebar entry is **adding a route**. There is no separate "menu config" — that drift is impossible by construction.
+
+---
+
+## Path parameters and `values`
+
+For routes with constrained parameters, declare `values`:
+
+```ts
+{
+  path: 'details/:assessmentId?/:resource?/:resourceId?',
+  values: { resource: ['finding', 'evidence'] },
+  ...
+}
+```
+
+`values` is consumed by `useRouteValuesGuard` (`src/hooks/useRouteValuesGuard.ts`), which redirects the user if the URL contains an invalid value for `resource`. This is how `/collections/assessments/details/123/foo/456` is rejected without writing per-page validation.
+
+---
+
+## Breadcrumbs
+
+The breadcrumbs slice (`src/slices/breadcrumbs/`) holds a stack of breadcrumb entries. Two hooks push into it:
+
+- `useBreadcrumbs(routes)` — populates the basic chain from the current route's ancestors automatically.
+- `useBreadcrumbSectionTitle({ title })` — pushes a dynamic segment (record name, key, etc.) for the current page.
+
+Rendering happens in the dashboard layout's `Breadcrumbs` component. Pages don't render breadcrumbs themselves.
+
+---
+
+## Useful routing hooks
+
+| Hook                       | Returns                                                            |
+|----------------------------|--------------------------------------------------------------------|
+| `useRoutes()`              | The full filtered route tree for the current user                  |
+| `useCurrentRoute()`        | The `Route` object for the active path                             |
+| `useSiblingsRoutes()`      | Siblings of the current route + tab descriptors for `VerticalTabs` |
+| `useGetMenuTree(routes)`   | Sidebar menu tree                                                  |
+| `useNavigateWithQuery()`   | `navigate(path)` that preserves the current query string           |
+| `useRouteValuesGuard()`    | Redirects when path parameters violate `values`                    |
+
+---
+
+## Adding a new route — recipe
+
+1. **Create the page component** under `src/features/<area>/<page>/<Page>.tsx`.
+2. **Add the route entry** to `src/app/routes.ts`:
+   ```ts
+   {
+     path: 'my-page',
+     href: '/my-area/my-page',
+     importUrl: 'features/myArea/myPage/MyPage',
+     title: 'My Page',
+     menu: true,
+   }
+   ```
+3. **Add an ability check** if the page is permission-sensitive (`abilityCan`).
+4. **Add a feature flag** if the page is behind a toggle (`featureFlagCan`).
+5. Done — the sidebar updates, breadcrumbs flow, lazy loading just works.
+
+For a page with sub-pages (section root + tabs):
+
+1. Create the section root manually or copy an existing product section root such as `Accounts.tsx`, `Customers.tsx`, or `Assessments.tsx`.
+2. Run `npm run plop` → `mvvm-component` for each real sub-page.
+3. Add the parent route with the section root as `importUrl` and each sub-page as a child.
+
+For documentation routes only, use `documentation-section` for the section root and `documentation-page` for each MDX page.
+
+---
+
+## Anti-patterns
+
+- **Hardcoding `<Routes>` JSX**. Coreola does not use the JSX router API — everything goes through `routes.ts`.
+- **Importing page components at the top of `routes.ts`**. That defeats code splitting — use `importUrl`.
+- **Bypassing `abilityCan` with a custom check inside the page**. Filtering at the router level is what removes the route from the sidebar; in-page checks alone leave a dead nav entry.
+- **Reordering the children of a parent route to "fix" which one shows by default**. Use `redirectTo` with the right `abilityCan` cascade instead.
+
+---
+
+## Next steps
+
+- [State Management](/development/state-management) — what the `user` slice carries that drives routing
+- [Permissions](/customization/permissions) — `abilityCan` and CASL in depth
+- [Architecture](/overview/architecture) — where routing sits in the bootstrap

@@ -1,0 +1,213 @@
+# Spacing
+
+Coreola uses a **4-pixel base unit**. Every gap, padding, and margin in the system is a multiple of 4. This is half the MUI default of 8, chosen to support dense admin layouts.
+
+The setting lives in `src/themes/defaults/options.ts`:
+
+```ts
+spacing: 4
+```
+
+---
+
+## The scale
+
+`theme.spacing(n)` returns `n * 4` pixels:
+
+| `theme.spacing()` | Pixels | Typical use                                    |
+|-------------------|--------|------------------------------------------------|
+| `0`               | 0      | No gap                                         |
+| `1`               | 4      | Tight inline gap                               |
+| `2`               | 8      | Default form gap between label and input       |
+| `3`               | 12     | Inline padding inside small buttons            |
+| `4`               | 16     | Default card content padding, list item gap    |
+| `5`               | 20     | Card section gap                               |
+| `6`               | 24     | Card padding (left/right), dialog padding      |
+| `8`               | 32     | Section separator                              |
+| `10`              | 40     | Page top padding (small)                       |
+| `12`              | 48     | Page top padding (medium)                      |
+| `16`              | 64     | Large section gap (rare)                       |
+| `20`              | 80     | Hero spacing (auth pages)                      |
+
+Anything outside the multiples of 4 should be a deliberate, justified exception.
+
+---
+
+## How to apply spacing
+
+#### MUI shorthand props
+
+The standard way:
+
+```tsx
+<Box sx={{ p: 2, mt: 4, mx: 'auto' }}>...</Box>
+<Stack spacing={2} direction="column">...</Stack>
+<Grid container spacing={3}>...</Grid>
+```
+
+`p: 2` means `padding: theme.spacing(2)` = 8px. The MUI shorthand props (`m`, `mt`, `mb`, `mx`, `my`, `p`, `pt`, ...) accept numeric values from this scale.
+
+#### `theme.spacing()` inside `styled` or custom CSS
+
+```tsx
+const Wrap = styled('div')(({ theme }) => ({
+  padding: theme.spacing(2, 3),  // 8px vertical, 12px horizontal
+}));
+```
+
+#### The `spacingNumber` helper
+
+When you need a raw number (for example, to subtract two spacings, or to feed it to a non-MUI lib like nivo):
+
+```tsx
+import { spacingNumber } from 'themes/defaults/helpers';
+
+const sidebarWidth = spacingNumber(60, theme);  // 240
+```
+
+---
+
+## Component-level defaults
+
+Coreola's MUI overrides bake in consistent spacing for common surfaces. The values below come from `src/themes/defaults/options.ts`:
+
+#### `MuiCard`
+
+- Header: top `16`, left/right `24`, bottom border `12`
+- Content: top/bottom `20`, left/right `24`
+- Actions: bottom `24`, left/right `24`, top `24`
+
+Cards have a strong horizontal frame (`24`) and breathing room vertically. This is what makes the "stack of cards" detail page feel calm.
+
+#### `MuiButton`
+
+- `sizeTiny`: 28px min height, 4px vertical padding
+- `sizeSmall`: 36px min height, 5px top padding
+- `sizeMedium`: 48px min height, 6px top padding, 24px horizontal padding
+- `sizeLarge`: 56px min height, 32px horizontal padding
+
+The button hit targets are explicitly tuned so that tiny/small buttons remain tappable.
+
+#### `MuiInputBase` and variants
+
+- Outlined/Filled/Standard: 48px min height (size medium), 36px (small), 56px (large)
+- Internal padding adjusts per variant — see `options.ts` for the full matrix.
+
+#### `MuiDialog` and `MuiDialogActions`
+
+- Action area: 24px padding, 8px top padding (per `MuiDialogActions.spacing`).
+- Dialog content padding follows the MUI default.
+
+#### `MuiListItem` and `MuiListItemIcon`
+
+- List items get `borderRadius: 8`.
+- List item icons take a `minWidth: 28` and 16-px SVGs — sized to align with body text without dominating it.
+
+---
+
+## Layout-level spacing
+
+The dashboard layout has its own structural dimensions:
+
+- **Sidebar width** — set in the dashboard layout component. Pages should not assume a specific width; use `theme.breakpoints` or `theme.zIndex` instead of hard-coding.
+- **Toolbar height** — MUI default (`64px` desktop, `56px` mobile) unless overridden.
+- **Page content max width** — defined in `src/app/settings.ts`:
+
+```ts
+layoutMaxWidths: {
+  narrow: 820,
+  wide:   1200,
+}
+```
+
+The `useParentDiffX` hook clamps card width to `narrow` or `wide` and recenters horizontally. This is what keeps text-heavy pages (documentation, settings) from spanning the full viewport.
+
+---
+
+## Breakpoints
+
+Coreola uses MUI's breakpoint system with a tweaked `xl`:
+
+```ts
+breakpoints: {
+  values: {
+    xs: 0,
+    sm: 600,
+    md: 960,
+    lg: 1280,
+    xl: 1440,
+  },
+}
+```
+
+The default MUI `xl` is 1536; Coreola lowers it to 1440 because most admin users sit on 1440-wide laptops. Use:
+
+```tsx
+<Box sx={{ p: { xs: 2, md: 3, lg: 4 } }} />
+```
+
+…instead of hand-rolled media queries.
+
+---
+
+## Corner radii
+
+Coreola uses three corner radius tokens. The base lives in MUI defaults; the two extras are Coreola additions:
+
+```ts
+shape: {
+  borderRadius:       4,   // MUI default; small inputs, chips, menu items
+  borderRadiusMedium: 8,   // cards, surfaces
+  borderRadiusLarge: 16,   // hero surfaces, illustrations
+}
+```
+
+Reach for them through `theme.shape.borderRadius`, `theme.shape.borderRadiusMedium`, `theme.shape.borderRadiusLarge`. Never hard-code radii.
+
+---
+
+## Anti-patterns
+
+Avoid these:
+
+- **Hard-coded pixel values** in component code:
+
+  ```tsx
+  // ❌ Bad
+  <Box sx={{ padding: '14px' }} />
+
+  // ✅ Good
+  <Box sx={{ p: 2 }} />            // 8px
+  <Box sx={{ p: '12px' }} />        // also 8-aligned (rare exception)
+  ```
+
+- **Spacing through margins between children** — prefer `Stack` with `spacing`, or grid `gap`. Margin-collapsing is a debugging tax.
+- **Padding inside a flex parent to create "gap"** — use `gap` directly.
+- **Custom layout containers** for one-off pages — extend the standard catalog/detail/dashboard layouts instead.
+
+---
+
+## Quick reference
+
+```tsx
+// Common values
+sx={{ p: 1 }}   // 4px
+sx={{ p: 2 }}   // 8px
+sx={{ p: 3 }}   // 12px
+sx={{ p: 4 }}   // 16px
+sx={{ p: 6 }}   // 24px  ← card horizontal padding
+
+// Stack with vertical gap
+<Stack spacing={2}>...</Stack>   // 8px between items
+
+// Conditional spacing per breakpoint
+sx={{ p: { xs: 2, md: 4 } }}
+```
+
+---
+
+## Next steps
+
+- [Icons](/design-system/icons) — the icon set Coreola uses
+- [Components](/design-system/components) — components built on this grid
+- [Tables](/ui-patterns/tables) — how density and spacing play out in tables

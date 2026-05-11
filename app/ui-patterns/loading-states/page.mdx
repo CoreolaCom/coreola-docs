@@ -1,0 +1,173 @@
+# Loading States
+
+A loading state is a promise: "something is coming, in this shape, in this place." Coreola favors **skeletons** (visible placeholders that match content shape) over spinners (centered, opaque, indefinite) because skeletons reduce perceived wait and communicate layout.
+
+This page covers when to use which loading indicator and how to wire them.
+
+---
+
+## The four indicators
+
+| Indicator         | Use for                                                |
+|-------------------|--------------------------------------------------------|
+| `Skeleton`        | Content area loading — list rows, card bodies, paragraphs |
+| `LinearProgress`  | Indeterminate page-top or in-component progress         |
+| Button `loading` prop | Mutation in flight on a specific action             |
+| MUI `CircularProgress` | Rare — last resort when nothing else fits          |
+
+Lean on `Skeleton` first. Spinners are noisy and tell the user nothing about what is coming.
+
+---
+
+## `Skeleton`
+
+`Skeleton` is a thin wrapper around MUI's skeleton with two extras:
+
+```ts
+{
+  loading?: boolean;        // when false, renders `value` instead of placeholder
+  value?: ReactNode;        // what to render once loaded
+  rows?: number;            // how many lines to render when used as a paragraph
+  noRandom?: boolean;       // disable random widths between rows
+  minWidth?: number;        // minimum width per row
+  ...SkeletonProps          // pass-through MUI props
+}
+```
+
+Three usage patterns:
+
+#### Inline replacement of a value
+
+```tsx
+<Skeleton loading={loading} value={user?.name} width={120} />
+```
+
+The placeholder takes the shape of the eventual content. Use this for KPI values, card titles, single fields.
+
+#### Multi-line block
+
+```tsx
+<Skeleton loading rows={3} width="100%" />
+```
+
+Renders three skeleton bars at slightly varying widths (unless `noRandom`). Use for paragraphs, descriptions, list summaries.
+
+#### Standalone (no `value`)
+
+```tsx
+{loading && <Skeleton rows={5} width="100%" />}
+{!loading && <RealContent />}
+```
+
+Equivalent to the inline form but more readable when the real content is a non-trivial tree.
+
+---
+
+## `LinearProgress`
+
+Use for top-of-component or top-of-page progress.
+
+```ts
+{
+  show: boolean;
+  ...LinearProgressProps
+}
+```
+
+Two notes:
+
+- The component **debounces by 300ms**. If `show` flips true-then-false within 300ms, nothing is rendered. This prevents the "flash of progress bar" when a request resolves quickly.
+- It is intended for in-content progress — for example, the table renders a `LinearProgress` at its top while fetching a new page. It is **not** a global top-of-page indicator.
+
+The dashboard layout does not render a global progress bar. The active-request count from `slices/app/app.slice.ts` (`activeRequestsCount`) is available if you want to wire one — but the design choice is per-component skeletons over a global bar.
+
+---
+
+## Button `loading`
+
+Submission buttons should disable themselves and show a spinner while a mutation is in flight:
+
+```tsx
+<Button type="submit" disabled={isLoading} loading={isLoading}>
+  {t('Save')}
+</Button>
+```
+
+Disable only the submit button, not the inputs. The user should still be able to read and copy what they typed while the request is in flight.
+
+For row-level actions (a "Delete" button in a list), apply the same pattern to that row's action button only — never spin the whole table.
+
+---
+
+## Where each loading state goes
+
+#### Catalog / list pages
+
+- **Initial load:** `Table loading={true}`. The table renders skeleton rows at column widths.
+- **Page change / sort / filter:** the table's internal `LinearProgress` runs at the top of the table body.
+- **Per-row action:** the action button shows its own spinner via `loading` prop.
+
+#### Details pages
+
+- **Initial load:** each card renders its own skeleton state. Do not block the whole page on the slowest sub-resource.
+- **Edit mode mutation:** the dialog's submit button shows `loading`. Inputs stay enabled.
+- **Inline edit (`EditableField`):** the component handles its own pending state — leave it alone.
+
+#### Dashboards
+
+- **Initial load:** skeleton placeholders in the same grid shape as the real content. Each KPI card shows a skeleton number; each chart card shows a skeleton block.
+- **Polling refresh:** do not show a loading state at all — the data updates in place every 60 seconds. Surprise refreshes are bad UX.
+
+#### Forms
+
+- **Field initial values fetching:** disable submit and render the form with skeletons in field positions (rare — most forms have synchronous defaults).
+- **Submission:** button `loading`.
+
+---
+
+## Timing rules
+
+Two simple thresholds:
+
+- **< 200ms:** show nothing. Faster than this, a loading indicator is noise.
+- **200ms – 1s:** show skeleton or `LinearProgress`.
+- **> 1s:** keep showing the skeleton. If the request fails or times out, surface the error instead — never leave a skeleton up indefinitely.
+
+For server pagination via `useServerPaginatedTable`, the timing is handled internally. The `isHydrated` flag prevents a "flash of empty" while saved preferences are loading.
+
+---
+
+## Loading vs empty
+
+These get confused. The distinction:
+
+- **Loading** = data is on its way. Render a skeleton.
+- **Empty** = data has arrived, and it is empty. Render an `EmptyState`.
+
+In practice:
+
+```ts
+if (loading) return <Skeleton ... />;
+if (data?.items.length === 0) return <EmptyState ... />;
+return <RealContent ... />;
+```
+
+Mixing the two — for example, rendering an empty state while still fetching — flickers and confuses.
+
+---
+
+## Anti-patterns
+
+- **Centered spinners over content.** Replace with skeletons in the shape of the content.
+- **Global page loader on every navigation.** Coreola routes are lazy-loaded; React Router handles the gap. A page-wide blocking overlay is overkill.
+- **Disabling inputs during submission.** Disable the submit button instead.
+- **Skeleton in one place, empty state in another, for the same surface.** Pick one progression: skeleton → empty (if no data) or skeleton → content.
+- **Custom loading copy** ("Please wait…"). The visual is enough. Copy is for empty/error states, not loading.
+
+---
+
+## Next steps
+
+- [Empty States](/ui-patterns/empty-states) — the next state after loading
+- [Tables](/ui-patterns/tables) — how tables wire skeletons and the internal `LinearProgress`
+- [Forms](/ui-patterns/forms) — button loading on submit

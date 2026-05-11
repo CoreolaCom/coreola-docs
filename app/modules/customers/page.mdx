@@ -1,0 +1,214 @@
+# Customers
+
+The customers module demonstrates two table strategies — **client-side** and **server-side** — plus a saved-filter concept called **Segments**. It is the second domain example in Coreola, and a useful counterpoint to Assessments.
+
+- Source: `src/features/collections/customers/`
+- API: `src/api/customers/`, `src/api/segments/`
+- Routes: `/collections/customers/list`, `/collections/customers/server-side-list`, `/collections/customers/details/:customerId?`, `/collections/customers/segments/:segmentId?`
+
+---
+
+## Sub-modules
+
+```
+customers/
+├─ listCustomers/      # Client-side list — fetches up to 300 customers and filters locally
+├─ serverSideList/     # Server-side paginated list — same domain, different strategy
+├─ customerDetails/    # Single-customer view with logs
+└─ segments/           # Saved-filter groupings ("audiences")
+```
+
+`listCustomers` and `serverSideList` are intentionally separate so the codebase shows both approaches side-by-side. Pick the one that matches your dataset size.
+
+---
+
+## listCustomers — client-side list
+
+#### When to use
+
+For datasets that fit in memory comfortably and benefit from instant filter/sort/search:
+
+- Tens to a few hundred rows.
+- All rows need to be visible without paging.
+- Network latency makes server-side feel sluggish.
+
+#### Model hook
+
+`useCustomersList` responsibilities:
+
+- Fetches up to 300 customers at once via `useGetCustomersQueryMapped({ _limit: 300 })`.
+- Manages delete dialog state and the selected ids.
+- Surfaces row actions: view details, edit, delete.
+- Renders an expandable `CustomerLogsToggle` per row showing recent activity.
+- Reads filter config from `useCustomersFilters` (status, role, etc.).
+
+The result is a single `Table` instance running in **client mode** — filtering, sorting, and paging happen in the browser.
+
+#### View
+
+`features/collections/customers/listCustomers/views/ListCustomersView.tsx`. Standard `Table` + filters + action menu.
+
+---
+
+## serverSideList — server-side list
+
+#### When to use
+
+For production-scale datasets:
+
+- Thousands of rows or more.
+- Filter, sort, page, search shaped by the server.
+- URL state and persistence are required.
+
+#### Model hook
+
+`useServerSideList` responsibilities:
+
+- Wires `useServerPaginatedTable({ tableId: 'customers-server-side', filters })`.
+- Hydrates from URL + stored preferences.
+- Triggers the same `useGetCustomersQueryMapped` but with `queryParams` derived from the table state.
+- Exposes `exportAllRows` via `useExportAllRows`.
+
+#### View
+
+`features/collections/customers/serverSideList/views/ServerSideListView.tsx`. Same component as the client version, but with `serverPagination` and `id` props connected.
+
+---
+
+## Which one should I copy?
+
+For a new module against a real backend: **start with `serverSideList`**. It scales. Client-side filtering is an optimization for small lists, not a default.
+
+The dual implementation in Coreola exists so you can read both side-by-side and see what changes between strategies. In a forked product, you would typically keep only one.
+
+---
+
+## Customer details
+
+#### Route
+
+`/collections/customers/details/:customerId?`
+
+#### Model hook
+
+`useCustomerDetails` responsibilities:
+
+- Loads the customer (`useGetCustomerQueryMapped`) and the activity logs (`useGetCustomerLogsQuery`).
+- Handles edit mode, save, and delete via mutations on `customersApi`.
+- Owns the breadcrumb title via `useBreadcrumbSectionTitle({ title: customer?.name })`.
+
+#### Card composition
+
+Customer details is a smaller version of the [details-page pattern](/ui-patterns/details-pages):
+
+- **Overview card** with inline edit (`CustomerDetailsObserveView`)
+- **Logs card** showing recent customer activity
+
+Fewer cards than Assessments because customers have fewer side resources. Same conventions otherwise.
+
+---
+
+## Segments
+
+#### Concept
+
+A **segment** is a **named, saved filter** over the customers list. Operators use segments to slice customers into audiences without rebuilding filters every time.
+
+- Source: `src/features/collections/customers/segments/`
+- API: `src/api/segments/`
+
+#### Segment shape
+
+From `src/api/segments/segments.types.ts`:
+
+```
+SegmentType {
+  id, name, description,
+  filters,            // TableFiltersState — the saved filter values
+  customers_count,
+  customers,          // resolved customers in the segment
+  updated,
+}
+```
+
+The `filters` field is the same shape the customers table uses (`{ values: Record<filterId, string[]>, enabled: string[] }`). A segment is essentially a checkpoint of the table's filter state — labeled and shared.
+
+#### Model hook
+
+`useSegments` responsibilities:
+
+- Fetches up to 200 segments via `useGetSegmentsQueryMapped({ _limit: 200 })`.
+- Manages selection (for bulk delete) and dialog state.
+- Exposes create-new, edit, delete (single + bulk) actions.
+- Drives the row click to a details view that previews the customers the segment resolves to.
+
+#### Why segments are useful
+
+In a production admin product, the same operator runs the same query daily: "show me churned VIP customers in Germany". A segment captures that query as a first-class object — addressable, sharable, persistent.
+
+If your product has natural audiences (cohorts, tiers, opt-in groups), segments are easy to fork.
+
+---
+
+## API
+
+Two slices:
+
+#### `customersApi`
+
+- `GET /customers` — list
+- `GET /customers/:id` — single
+- `POST /customers` — create
+- `PUT /customers/:id` — update
+- `DELETE /customers/:id` — remove
+- `GET /customers/logs?customer_id=...` — activity logs
+- `POST /upload-avatar` — avatar upload (used by profile + customer photos)
+
+#### `segmentsApi`
+
+- `GET /segments` — list
+- `POST /segments` — create
+- `PUT /segments/:id` — update
+- `DELETE /segments/:id` — remove
+
+Both expose `Mapped` variants of the GET hooks that normalize server data into UI-friendly shapes (full name composition, etc.).
+
+---
+
+## Permissions
+
+| Route                             | Required ability    |
+|-----------------------------------|---------------------|
+| `/collections/customers/*`        | `customer.read`     |
+| Create/edit                       | `customer.create` / `customer.update` |
+| Delete                            | `customer.delete`   |
+| `/collections/customers/segments` | `segment.read`      |
+
+---
+
+## Adapting customers to your domain
+
+If your product has "accounts", "organizations", "users-as-customers", or any other party-like entity, customers is a fork target:
+
+1. Rename the entity (`Customer` → `<YourParty>`).
+2. Pick **one** list strategy (server-side recommended).
+3. Drop or keep segments based on whether your product has audiences.
+4. Keep the details + logs split — every party-like entity benefits from an activity feed.
+
+The segment concept itself is reusable. If your domain has saved filters anywhere, the same shape applies.
+
+---
+
+## Anti-patterns
+
+- **Mixing both list strategies on one page.** Pick one. Two list pages over the same data, confusing the reader, is exactly what `serverSideList` vs `listCustomers` is **not** modeling — they are two separate routes by design.
+- **Storing segment filter state in custom shape.** Reuse `TableFiltersState` so saved filters round-trip through the existing table machinery.
+- **Hardcoding filter options.** Pull from a meta endpoint (`useGetCustomersMetaQuery`-style) so admins can extend statuses/roles without code changes.
+
+---
+
+## Next steps
+
+- [Tables](/ui-patterns/tables) — both list views are built on `Table`
+- [Filters](/ui-patterns/filters) — segments are saved filter states
+- [Assessments](/modules/assessments) — the more complex workflow module

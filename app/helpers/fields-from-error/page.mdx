@@ -1,0 +1,11 @@
+# `fieldsFromError.ts`
+
+Map react-hook-form errors to MUI input props.
+
+- `fieldsFromError(errors, values)` — Maps `FieldErrors` into a `{ error, helperText }` object per field, ready to spread on MUI inputs.
+- `FieldErrorState` — `{ error?: boolean; helperText?: string }`.
+
+For React components, use the `useFieldsFromError` hook wrapper instead.
+
+- Source: `src/helpers/fieldsFromError.ts`
+- Import: `import { fieldsFromError, FieldErrorState } from 'helpers/fieldsFromError'`

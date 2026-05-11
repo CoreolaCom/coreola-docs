@@ -1,0 +1,203 @@
+# Colors
+
+Coreola defines its palette in two layers — **raw color scales** in `src/themes/defaults/colors.ts` and **role-based palette mappings** in `src/themes/light/palette.ts` and `src/themes/dark/palette.ts`.
+
+Application code should always reach for the role-based tokens (`primary.main`, `success.light`, `text.primary`, …), never the raw scales. The raw scales exist so that the palette can be retuned in one place.
+
+---
+
+## Layer 1 — raw color scales
+
+Each scale is a 10-step ramp (50 to 900) exported from `src/themes/defaults/colors.ts`:
+
+| Scale           | Role hint                                |
+|-----------------|------------------------------------------|
+| `violet`        | Brand / primary                          |
+| `magenta`       | Secondary / accent                       |
+| `ocean`         | Chart accent                             |
+| `garden`        | Success                                  |
+| `laguna`        | Info / dark neutrals                     |
+| `lagunaLight`   | Light neutrals                           |
+| `coal`          | Deep neutrals (dark theme backgrounds)   |
+| `sand`          | Warning                                  |
+| `lava`          | Error                                    |
+| `greyInvert`    | Inverted grayscale (icons on dark)       |
+| `opacityGrey`   | Black with alpha (rgba scale)            |
+| `opacityWhite`  | White with alpha (rgba scale)            |
+| `opacityViolet` | Brand with alpha                         |
+| `opacityPink`   | Light pink with alpha                    |
+| `opacityCoal`   | Deep neutral with alpha                  |
+
+The opacity ramps exist so that translucent layers (overlays, dim states, focus rings) compose cleanly over arbitrary backgrounds.
+
+---
+
+## Layer 2 — role-based palette
+
+The light palette is defined in `src/themes/light/palette.ts` and the dark in `src/themes/dark/palette.ts`. Both expose the same shape, so application code is theme-mode-agnostic.
+
+#### Primary / secondary
+
+```ts
+primary:   { light: violet[300],  main: violet[500],  dark: violet[700],  contrastText: violet[50] }
+secondary: { light: magenta[300], main: magenta[500], dark: magenta[700], contrastText: magenta[50] }
+```
+
+Use `primary` for the dominant action on a page (the main CTA, the active nav state, focus indicators). Use `secondary` rarely — when you need a tonal counterpoint that is still recognizable as "Coreola".
+
+#### Status colors
+
+| Role      | Scale  | Use                                              |
+|-----------|--------|--------------------------------------------------|
+| `success` | garden | Confirmed actions, "approved" status             |
+| `info`    | laguna | Neutral information, "pending" status            |
+| `warning` | sand   | Reversible-but-significant ("draft", "stale")    |
+| `error`   | lava   | Failed actions, "rejected", validation errors    |
+
+Status colors should always pair with a label or icon — never rely on color alone (see [Principles → Accessibility](/design-system/principles)).
+
+#### Text
+
+```ts
+text: {
+  header:    opacityGrey[800],   // dense headings
+  primary:   opacityGrey[900],   // body
+  secondary: opacityGrey[600],   // muted body, captions
+  disabled:  opacityGrey[400],   // disabled state
+}
+```
+
+#### Background
+
+```ts
+background: {
+  default:     '#FFF',
+  paper:       '#FFF',
+  light:       grey[50],
+  lighter:     grey[100],
+  main:        grey[200],
+  dark:        grey[300],
+  transparent: 'transparent',
+}
+```
+
+`default` is the page background; `paper` is the elevation-zero surface. The `light`/`lighter`/`main`/`dark` variants give you four tonal steps for nested surfaces.
+
+#### Action
+
+```ts
+action: {
+  active:   violet[500],
+  hover:    violet[50],
+  focus:    opacityViolet[100],
+  selected: violet[50],
+}
+```
+
+Used by MUI components automatically. You only need to reach for these when building a custom interactive surface (a clickable card, a draggable handle, etc.).
+
+#### Border
+
+```ts
+border: {
+  lighter:      opacityGrey[50],
+  light:        opacityGrey[100],
+  main:         opacityGrey[200],
+  dark:         opacityGrey[300],
+  contrastText: opacityGrey[500],
+}
+```
+
+Four-step ramp for dividers, card outlines, focus rings. Prefer the lighter end of the scale — Coreola's surfaces lean on negative space, not strong borders.
+
+#### Chart
+
+```ts
+color: {
+  primary:   violet,
+  secondary: magenta,
+  chart:     ocean,
+  success:   garden,
+  info:      laguna,
+  warning:   sand,
+  error:     lava,
+  inherit:   grey,
+  opacityGrey,
+}
+```
+
+This nested `color` namespace exposes the **full scales** (not just the role mapping) for cases where you need a specific shade — most commonly for charts. Use `theme.palette.color.chart[400]` instead of importing `ocean[400]` directly.
+
+---
+
+## Dark theme differences
+
+The dark palette uses the same role names with mode-appropriate values:
+
+- `background.default` and `background.paper` use `coal[...]` instead of white.
+- `text.*` flips toward white-with-alpha (`opacityWhite[...]`).
+- Status, brand, and action colors are tuned but keep their roles — `success` is still garden, `error` is still lava.
+
+The exact dark mapping is in `src/themes/dark/palette.ts`.
+
+---
+
+## Using colors in code
+
+#### Preferred — palette tokens
+
+```tsx
+<Box sx={{ color: 'text.secondary', borderColor: 'border.light' }} />
+
+<Button color="success">Approve</Button>
+```
+
+#### Acceptable — theme accessor for non-static contexts
+
+```tsx
+import { useTheme } from '@mui/material/styles';
+
+const theme = useTheme();
+const chartFill = theme.palette.color.chart[400];
+```
+
+#### Forbidden — raw hex / rgba in component code
+
+```tsx
+// ❌ Do not do this
+<Box sx={{ color: '#693F83' }} />
+```
+
+Raw colors do not respond to theme switches and break the system.
+
+---
+
+## Charts
+
+Charts (`@nivo/*`) need explicit colors. The pattern is:
+
+1. Read scales via `theme.palette.color.chart`, `theme.palette.color.success`, etc.
+2. Pass them as arrays to the nivo component (`colors={[...]}`).
+3. Wrap chart components in a hook (`useTheme`) so they re-render on theme switch.
+
+See `src/features/dashboards/application/` for the canonical example.
+
+---
+
+## Adding a new color
+
+If you need a tonal color that does not exist:
+
+1. Add the scale to `src/themes/defaults/colors.ts` as a new export (e.g., `export const teal = { 50: ..., 900: ... }`).
+2. Decide its role. If it is brand-specific, give it a role in `palette.ts` and reference it via that role. If it is one-off (a category color), only expose it through `palette.color.<name>`.
+3. Add the dark-mode variant in `src/themes/dark/palette.ts`.
+4. **Do not** import the raw scale directly in application code — go through the palette.
+
+---
+
+## Next steps
+
+- [Spacing](/design-system/spacing) — the 4-px grid
+- [Icons](/design-system/icons) — the MUI icon set and conventions
+- [Components](/design-system/components) — how components consume the palette
+- [Theme](/customization/theme) — extending or replacing the palette

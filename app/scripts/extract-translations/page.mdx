@@ -1,0 +1,35 @@
+# `extract-translations.js`
+
+Walks the codebase and produces JSON translation bundles from `useTranslation` / `usePhrase` / `t()` calls.
+
+#### What it does
+
+1. Reads every `.ts` / `.tsx` file under `src/`.
+2. Detects translation patterns:
+   - `useTranslation('namespace')` — namespace-scoped `t()` calls.
+   - `useTranslation()` — defaults to the `translation` namespace.
+   - `usePhrase('target', 'namespace')` — nested phrase calls under a `target` key.
+   - `t('key', { ns: 'namespace' })` — explicit-namespace calls.
+3. Collects every key passed to the resolved `t` function (renamed aliases like `tForm` are followed).
+4. Writes the keys (with empty string values, ready for translators) into `public/locales/en/<namespace>.json`, preserving any existing translations.
+
+#### Run
+
+```bash
+node scripts/extract-translations.js
+```
+
+The output appears under `public/locales/en/`. Copy the per-namespace files to other locale folders (`uk/`, etc.) and translate them.
+
+#### When to use
+
+- After adding a new component with new `t()` keys.
+- After renaming a namespace or refactoring a `usePhrase` target.
+- As a final pre-PR check that no translation key was forgotten.
+
+#### Limitations
+
+- The script is regex-based — it cannot resolve **dynamic** key strings (`` t(`form.${field}`) ``). Use enum-like static keys when possible.
+- Keys passed via variables (`const k = 'submit'; t(k)`) are invisible to the extractor.
+
+- Source: `scripts/extract-translations.js`
