@@ -47,7 +47,6 @@ src/
 ├─ layouts/         # Page layout wrappers
 ├─ slices/          # Redux slices (non-API state)
 ├─ themes/          # Light and dark theme definitions
-├─ utils/           # Standalone low-level utilities
 ├─ App.tsx          # Root component
 ├─ App.test.tsx
 ├─ index.tsx        # Entry point
@@ -149,6 +148,7 @@ features/
 │  ├─ development/
 │  ├─ customization/
 │  ├─ deployment/
+│  ├─ reference/        # Hooks, Helpers, Scripts reference docs
 │  └─ changelog/
 │
 └─ user/                # Profile flows (name & email, photo, password)
@@ -308,21 +308,9 @@ Pure functions and small modules used across features.
 - `dirtyData.ts`, `fieldsFromError.ts`, `filters.ts` — form and table helpers
 - `checkTokenIsValid.ts`, `getPersistData.ts`, `persistPurgeCheck.ts` — auth and persistence
 - `getNamespaces.ts` — i18n namespace helper
+- `canvas.ts` — image manipulation primitives (crop, rotate, blob → base64)
+- `voidFromPromise.ts` — wrap async callbacks as void-returning handlers
 - `styledProps.ts`, `utils.ts` — misc
-
----
-
-## `src/utils/`
-
-A smaller set of standalone, dependency-free utilities.
-
-```
-utils/
-├─ canvas.ts
-└─ voidFromPromise.ts
-```
-
-The split between `helpers/` and `utils/` is by dependencies: `utils/` knows nothing about Redux, MUI, or the rest of the app; `helpers/` may.
 
 ---
 
@@ -387,7 +375,8 @@ Run `npm run plop` and pick a generator. Available generators:
 
 ```
 scripts/
-└─ extract-translations.js   # Extract i18n keys from source
+├─ extract-translations.js   # Extract i18n keys from source
+└─ export-to-nextra.js       # Export in-app docs to a Nextra pages/ tree
 
 types/
 ├─ globals.d.ts

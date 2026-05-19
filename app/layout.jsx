@@ -12,9 +12,10 @@ export const metadata = {
 const navbar = (
   <Navbar
     logo={
-      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         <img src="/img/logo_filled.svg" alt="" width={22} height={22} />
-        <span>Coreola Docs</span>
+        <span style={{ textTransform: 'uppercase', letterSpacing: 8, fontSize: 12, fontWeight: 'bold', color: '#693F83' }}>Coreola</span>{' '}
+        <span style={{ textTransform: 'uppercase', fontSize: 12 }}>Docs</span>
       </span>
     }
     // ... Your additional navbar options

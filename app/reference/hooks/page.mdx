@@ -1,0 +1,367 @@
+# Hooks
+
+Coreola ships **29 custom React hooks** in `src/hooks/`. They wrap recurring concerns — routing, RBAC, forms, observers, URL state — into small, reusable building blocks so feature code stays declarative.
+
+Each hook below lists its signature, what it does, and when to reach for it. For implementation details, open the source file under `src/hooks/<hookName>.ts`.
+
+- Source: `src/hooks/`
+- Import: `import useHookName from 'hooks/useHookName'`
+
+---
+
+## Permissions and routing
+
+#### `useAbility`
+
+```ts
+useAbility(): AppAbility
+```
+
+Builds the current user's CASL ability object from the ability matrix stored in the `auth` slice. Returns a memoized `AppAbility` instance that can be passed to `<Can>` or queried via `.can(action, subject)`.
+
+- Use when you need to check user permissions in RBAC-protected UI.
+- Pair with `<Can>` for declarative rendering or with `ability.can(...)` for imperative checks.
+
+#### `useFeatureFlag`
+
+```ts
+useFeatureFlag(): {
+  featureFlags: FeatureFlagsMap | undefined;
+  canFeatureFlag: (key: string) => boolean;
+  featureFlagsLoaded: boolean;
+}
+```
+
+Loads feature flags for the authenticated user (via the features API) and exposes a `canFeatureFlag(key)` check plus a `featureFlagsLoaded` indicator. The hook also wires the flag map into the auth slice so route filtering can consume it.
+
+- Use when conditionally rendering features gated by server-controlled flags.
+
+#### `useRoutes`
+
+```ts
+useRoutes(): Route[]
+```
+
+Returns the application route tree available to the current user — filtered through `filterRoutesByAbility` against the user's CASL ability and feature flags, with `t()` already applied to titles.
+
+- Use when building navigation, menus, or any UI that should only show authorized routes.
+
+#### `useCurrentRoute`
+
+```ts
+useCurrentRoute(): MatchType | undefined
+```
+
+Resolves the currently matched application route with `pathnameBase` normalized (route params stripped). Returns `undefined` when no route matches.
+
+- Use when you need a stable identifier for the active route (breadcrumbs, scoped UI, analytics).
+
+#### `useSiblingsRoutes`
+
+```ts
+useSiblingsRoutes(): { siblingsRoutes: Route[]; siblingsTabs: TabOption[] }
+```
+
+Builds sibling routes and tab options from the current route's parent. Each sibling carries an `href` and `isActive` flag; `siblingsTabs` is the same data shaped for the `Tabs` component.
+
+- Use to render tabbed sub-navigation between siblings of the current route (vertical tabs, segmented controls).
+
+#### `useGetMenuTree`
+
+```ts
+useGetMenuTree(): MenuTree
+```
+
+Builds the dashboard menu tree — grouped, translated, RBAC-filtered, with icons and custom item behaviors merged in.
+
+- Use when rendering the main sidebar or any dashboard navigation surface.
+
+#### `useNavigateWithQuery`
+
+```ts
+useNavigateWithQuery(): NavigateFunction
+```
+
+Returns a `NavigateFunction` that automatically appends the **current** query string to any target path. Drop-in replacement for `useNavigate` when navigation should preserve URL params.
+
+- Use when navigating between filtered list views, paginated tables, or any URL-state-aware page.
+
+#### `useRouteValuesGuard`
+
+```ts
+useRouteValuesGuard(routeMatches: RouteMatch[]): boolean
+```
+
+Validates that the URL params on each matched route are listed in that route's `values` configuration. Returns `true` only when every match is allowed.
+
+- Use to short-circuit rendering when a URL param has an invalid enum-like value, before the page fetches data.
+
+---
+
+## URL state and query params
+
+#### `useSearchKeys`
+
+```ts
+useSearchKeys(): { searchParams: URLSearchParams; searchKeys: Record<string, string> }
+```
+
+Parses the current location search string into both the native `URLSearchParams` instance and a plain object snapshot.
+
+- Use when you want easy property access to query params alongside the full URLSearchParams API.
+
+#### `useSearchParams`
+
+```ts
+useSearchParams(paramsToKeep?: string[]): [
+  Record<string, string>,
+  (args: SetURLParamsProps) => string,
+]
+```
+
+Reads and updates URL search params with smart merging: optional offset reset on filter changes, an allowlist of keys to preserve, and a setter that returns the resulting URL (so callers can `navigate(url)` or build links).
+
+- Use for any URL-backed form, filter panel, or list view that needs predictable param updates.
+
+#### `useServerTableUrlState`
+
+```ts
+useServerTableUrlState<T extends Row>(props): Readonly<UseServerTableUrlStateResponse<T>>
+```
+
+Stores a table's pagination, search, sort, filters, and selection state in URL params, scoped by table ID so multiple tables can coexist on one page. Encodes/decodes complex filter values.
+
+- Use as the foundation for any table whose state should survive reloads and be shareable via URL.
+
+#### `useServerPaginatedTable`
+
+```ts
+useServerPaginatedTable<T extends Row>(props): Readonly<UseServerPaginatedTableResponse<T>>
+```
+
+Sits on top of `useServerTableUrlState` and merges in user-saved settings (saved column visibility, density, etc.), exposes hydration status, total row count, and ready-to-spread server-pagination props.
+
+- Use for production tables that need URL state **and** persisted per-user preferences.
+
+#### `useExportAllRows`
+
+```ts
+useExportAllRows<TRaw, TMapped, TQuery>(params): TableExportAllRowsHandler<TMapped>
+```
+
+Builds an export handler that fetches every page of a server-backed table sequentially, in chunks, then maps and flattens the results.
+
+- Use to wire CSV/XLSX exports to a server-paginated table without loading all rows upfront.
+
+---
+
+## Forms and validation
+
+#### `useAddYupRules`
+
+```ts
+useAddYupRules(): void
+```
+
+Side-effectful: registers project-specific Yup methods (`.phone()` and `.strictEmail()`) on the global `Yup.string` schema. Call once near app/form initialization.
+
+- Use exactly once at a high level so all subsequent Yup schemas can use the custom rules.
+
+#### `useFieldsFromError`
+
+```ts
+useFieldsFromError<TFieldValues>(errors, values): Record<string, FieldErrorState>
+```
+
+Converts react-hook-form's `FieldErrors` into a flat map of `{ error, helperText }` objects ready to spread onto MUI input components.
+
+- Use to bridge `react-hook-form` validation output with MUI's error/helperText props.
+
+#### `useCountryAutocomplete`
+
+```ts
+useCountryAutocomplete(params: UseCountryAutocompleteParams): {
+  countries: Country[];
+  selectedCountry: Country | null;
+  loadingCountries: boolean;
+  countryInputValue: string;
+  autocompleteProps: AutocompleteProps<Country>;
+}
+```
+
+Provides debounced country search state plus props ready to spread onto an MUI `Autocomplete`. Supports a `defaultValue` for the initial country.
+
+- Use for any country/region picker that should hit the countries API as the user types.
+
+#### `useAvatarEditor`
+
+```ts
+useAvatarEditor(params: UseAvatarEditorParams): UseAvatarEditorResponse
+```
+
+End-to-end state for an avatar upload + crop + rotate + zoom flow: dropzone props, edit-mode toggle, crop callbacks, clear/cancel/reset handlers.
+
+- Use when building a profile photo or avatar field with image cropping.
+
+---
+
+## DOM measurement and observation
+
+#### `useGetBounds`
+
+```ts
+useGetBounds(ref: RefObject<HTMLElement | null>, checkAfter?: number): ExtendedBounds | undefined
+```
+
+Measures an element via `ResizeObserver` (debounced) and adds element-width breakpoint helpers — e.g., `breakpoint.up('md')` checks the **element's** width, not the viewport.
+
+- Use for container-query-style responsiveness: components that adapt based on their own size.
+
+#### `useIsInViewport`
+
+```ts
+useIsInViewport(ref: RefObject<HTMLElement | null>): boolean
+```
+
+Tracks viewport intersection via `IntersectionObserver`. Returns `true` while the element is visible.
+
+- Use for lazy-load triggers, infinite scroll sentinels, and entrance animations.
+
+#### `useParentDiffX`
+
+```ts
+useParentDiffX(
+  ref: RefObject<HTMLElement | null>,
+  maxWidth?: MaxWidthPreset | number,
+  checkAfter?: number,
+): { diffX: number; diffSx: SxProps }
+```
+
+Calculates the horizontal shift needed to visually center an element inside the viewport, when its parent doesn't span full width. Returns the numeric `diffX` and a ready-to-spread `diffSx` MUI styles object.
+
+- Use for documentation pages and content cards that should remain horizontally centered on the screen despite a narrower parent.
+
+#### `useButtonMinWidth`
+
+```ts
+useButtonMinWidth(): number
+```
+
+Returns the standard responsive minimum width for action buttons: `150` on `md+` screens, `100` below.
+
+- Use on buttons in dialog footers and forms to keep widths consistent across the app.
+
+---
+
+## State helpers
+
+#### `useStateValues`
+
+```ts
+useStateValues<T extends Record<string, unknown>>(defaultValues: T): {
+  values: T;
+  setStateValue: SetStateValue<T>;
+  resetValues: VoidFunction;
+}
+```
+
+Manages a typed object of related state values as one unit. The overloaded setter accepts either a single key/value or a partial object.
+
+- Use when you'd otherwise call `useState` five times for related fields — cleaner reads and writes.
+
+#### `useDebounceValue`
+
+```ts
+useDebounceValue<T>(value: T, timeout: number, defaultValue?: T): T | undefined
+```
+
+Returns a debounced copy of `value` that only updates after `timeout` ms of no further changes.
+
+- Use to throttle search inputs, window resize handlers, or any value driving an expensive effect.
+
+#### `usePrevious`
+
+```ts
+usePrevious<T>(value: T): T | undefined
+```
+
+Returns the value committed in the **previous** render. `undefined` before the first commit.
+
+- Use when an effect needs to compare a current and previous value (e.g., to detect prop transitions).
+
+#### `useWatchMemoize`
+
+```ts
+useWatchMemoize<T>(value: T): T
+```
+
+Returns the same value reference across renders as long as the value remains deeply equal (lodash `isEqual`). Updates the reference only when content actually changes.
+
+- Use as a stability shim before passing complex values into `useEffect` / `useMemo` dependency arrays.
+
+---
+
+## i18n and breadcrumbs
+
+#### `usePhrase`
+
+```ts
+usePhrase(target: string, namespace?: string, options?: UseTranslationOptions): TFunction
+```
+
+Returns a scoped `t` function keyed under a `target` prefix. Missing keys fall back to the phrase key itself (with dev-mode console hints).
+
+- Use whenever a feature has many short labels under a shared prefix (e.g., `usePhrase('form')` → `t('submit')`).
+
+#### `useBreadcrumbs`
+
+```ts
+useBreadcrumbs(): { branch: CrumbsSection[]; lastItem?: CrumbsSection }
+```
+
+Builds the breadcrumb chain for the current route by combining matched routes with Redux-stored breadcrumb section overrides.
+
+- Use in your breadcrumb component to render the trail; pair with `useBreadcrumbSectionTitle` to override.
+
+#### `useBreadcrumbSectionTitle`
+
+```ts
+useBreadcrumbSectionTitle(props: UseBreadcrumbSectionTitleProps): void
+```
+
+Side-effectful: dispatches Redux actions to set a temporary breadcrumb section title for the current route, and clears it on unmount.
+
+- Use on detail pages that need to inject a dynamic name (entity title) into the breadcrumb chain.
+
+---
+
+## Theming
+
+#### `useTheme`
+
+```ts
+useTheme(): Theme
+```
+
+Builds and memoizes the active MUI `Theme` based on the alias stored in the `app` slice. Falls back to the first configured theme if the alias is unknown.
+
+- Use in the app root to compute the theme passed to `<ThemeProvider>`.
+- Prefer MUI's own `useTheme()` inside components — this hook is for theme **construction**, not consumption.
+
+---
+
+## Anti-patterns
+
+- **Reaching for `useState` when several values move together.** Use `useStateValues` for clarity and a smaller surface area.
+- **Calling `useAddYupRules` deep in the tree.** It must run once before any schema that uses the custom rules.
+- **Using `useNavigate` for filtered list navigation.** Use `useNavigateWithQuery` so filters survive the jump.
+- **Adding new ad-hoc URL state.** Prefer extending `useSearchParams` / `useServerTableUrlState` rather than parsing `location.search` manually.
+- **Container-query polyfills.** `useGetBounds` already provides element-width breakpoints — don't reach for an external library.
+
+---
+
+## Next steps
+
+- [State Management](/development/state-management) — how slices feed `useAbility`, `useFeatureFlag`, `useTheme`.
+- [Permissions](/customization/permissions) — the RBAC model that `useAbility` and `useRoutes` rely on.
+- [Tables](/ui-patterns/tables) — full-stack walkthrough of `useServerTableUrlState` and friends.

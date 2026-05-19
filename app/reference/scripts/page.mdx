@@ -1,0 +1,101 @@
+# Scripts
+
+The `scripts/` folder at the repo root holds Node.js maintenance scripts that live **outside** the Vite build. They run with plain `node scripts/<name>.js` — no compilation step — and read directly from `src/` to do their work.
+
+- Source: `scripts/`
+- Run: `node scripts/<name>.js`
+- Module system: ESM (the repo's `package.json` has `"type": "module"`)
+
+Both scripts are idempotent — safe to run repeatedly.
+
+---
+
+## `extract-translations.js`
+
+Walks the codebase and produces JSON translation bundles from `useTranslation` / `usePhrase` / `t()` calls.
+
+#### What it does
+
+1. Reads every `.ts` / `.tsx` file under `src/`.
+2. Detects translation patterns:
+   - `useTranslation('namespace')` — namespace-scoped `t()` calls.
+   - `useTranslation()` — defaults to the `translation` namespace.
+   - `usePhrase('target', 'namespace')` — nested phrase calls under a `target` key.
+   - `t('key', { ns: 'namespace' })` — explicit-namespace calls.
+3. Collects every key passed to the resolved `t` function (renamed aliases like `tForm` are followed).
+4. Writes the keys (with empty string values, ready for translators) into `public/locales/en/<namespace>.json`, preserving any existing translations.
+
+#### Run
+
+```bash
+node scripts/extract-translations.js
+```
+
+The output appears under `public/locales/en/`. Copy the per-namespace files to other locale folders (`uk/`, etc.) and translate them.
+
+#### When to use
+
+- After adding a new component with new `t()` keys.
+- After renaming a namespace or refactoring a `usePhrase` target.
+- As a final pre-PR check that no translation key was forgotten.
+
+#### Limitations
+
+- The script is regex-based — it cannot resolve **dynamic** key strings (`` t(`form.${field}`) ``). Use enum-like static keys when possible.
+- Keys passed via variables (`const k = 'submit'; t(k)`) are invisible to the extractor.
+
+---
+
+## `export-to-nextra.js`
+
+Exports the in-app MDX documentation under `src/features/documentation/` into a Nextra 3 `pages/` tree. Used to publish the docs as a stand-alone static site.
+
+#### What it does
+
+1. Reads `src/app/routes.ts`, locates the `/documentation` route, and parses its `children` array to build the docs tree.
+2. For each child route, reads the corresponding MDX file under `src/features/documentation/<section>/<page>/locales/<locale>/<Page>.mdx`.
+3. Strips the in-app setext header block (the `Title\n---` breadcrumb used by `MDXDoc`).
+4. Rewrites internal links from `/documentation/x/y` to `/x/y` so they work in Nextra's URL space.
+5. Removes `` placeholder comments.
+6. Writes the transformed MDX to `nextra/pages/<section>/<page>/page.mdx`.
+7. Emits `_meta.js` files at each level so Nextra's sidebar order matches the in-app navigation.
+
+#### Run
+
+```bash
+# Default (English)
+node scripts/export-to-nextra.js
+
+# Ukrainian
+LOCALE=uk node scripts/export-to-nextra.js
+
+# Keep the existing nextra/ folder (incremental update)
+CLEAN=0 node scripts/export-to-nextra.js
+```
+
+Output lives in `nextra/pages/`. Drop it into any Nextra 3 project (or the companion docs site) to publish.
+
+#### When to use
+
+- After editing in-app docs and before pushing the changes to the public docs site.
+- After adding a new section/page to the documentation tree in `routes.ts` — the script will pick it up automatically.
+
+#### Design notes
+
+- The TREE is **derived**, not hard-coded. To add a new doc page, edit `routes.ts` and create the MDX file — the script needs no changes.
+- `importUrl` is the source of truth: the camelCase folder segment in `features/documentation/<sectionSrc>/<pageSrc>/<PascalName>` becomes the source location the script reads from.
+- The script uses `new Function('return ...')` to evaluate the documentation route's children array as a JS literal. This is safe because that block contains no icon refs or function calls — just plain object literals.
+
+---
+
+## Adding a new script
+
+Keep scripts small, single-purpose, and ESM. Conventions:
+
+1. Place the file at `scripts/<name>.js`.
+2. Use `import` (not `require`) and resolve `__dirname` via `fileURLToPath(import.meta.url)`.
+3. Print progress with simple `console.log` lines using a consistent prefix (e.g., `  write `).
+4. Make it idempotent — re-running should be safe.
+5. Add a top-of-file JSDoc block describing the purpose, the inputs/outputs, and any env vars it honors.
+
+If the script becomes large or grows dependencies, consider promoting it into the build pipeline or splitting it into a small CLI package.

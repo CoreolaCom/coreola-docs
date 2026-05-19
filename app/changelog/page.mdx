@@ -1,6 +1,9 @@
+Changelog
+---
+
 # Changelog
 
-This page records noteworthy changes to Coreola itself — the foundation, not your fork of it.
+This page records noteworthy changes to Coreola itself - the foundation, not your fork of it.
 
 If you are extending Coreola for your product, keep your own changelog (a separate page, a `CHANGELOG.md`, or release notes). This changelog tracks the **template**.
 
@@ -14,47 +17,31 @@ Entries follow a lightweight version of [Keep a Changelog](https://keepachangelo
 
 - Most recent version at the top.
 - Categories per release: **Added** / **Changed** / **Fixed** / **Removed** / **Deprecated** / **Security**.
-- Each item is one line — link to the relevant docs page or PR for context.
+- Each item is one line - link to the relevant docs page or PR for context.
 
-A new release moves the `## Unreleased` section to a versioned heading and starts a fresh `## Unreleased`.
-
----
-
-## Unreleased
-
-#### Added
-
-- In-app documentation system. Routes under `/documentation/*` render localized MDX pages. See [Project Structure](/getting-started/project-structure).
-- Plop generators: `documentation-section` and `documentation-page` scaffold the docs surface.
-
-#### Changed
-
-- README rewritten to reflect Vite (was Create React App).
-- `src/api/cutomers/` renamed to `src/api/customers/` (folder typo).
-
-#### Fixed
-
-- Plop `documentation-page` template emitted invalid `\{` tokens in three places; corrected so generated pages compile.
+Future releases should add a new version heading above the previous release.
 
 ---
 
-## 0.1.1
+## 1.0.0 - 2026-05-15
 
-The current shipping snapshot.
+Initial Coreola release.
 
 #### Added
 
-- **Assessments module** — list, details, queue, and dashboard. Demonstrates the workflow pattern with statuses, findings, evidence requests, and decisions. See [Modules → Assessments](/modules/assessments).
-- **Customers module** — both client-side (`listCustomers`) and server-side (`serverSideList`) table strategies, plus segments as saved filters. See [Modules → Customers](/modules/customers).
-- **Accounts module** — users, roles, and abilities with the ability matrix UI. See [Modules → Accounts](/modules/accounts).
-- **Settings module** — General settings for language, theme, sidebar mode, developer debug translations, plus Feature Flags toggle UI. See [Modules → Settings](/modules/settings).
-- **Profile module** — name and email, avatar with crop, password change. See [Modules → Profile](/modules/profile).
-- **Auth module** — sign in, sign up, send password. See [Modules → Auth](/modules/auth).
-- **Dashboards** — Application and Assessments dashboards with KPI rows and `@nivo` charts. See [UI Patterns → Dashboards](/ui-patterns/dashboards).
-- **Component library** — ~40 shared components and showcase pages under `/core-components` and `/mui-components`. See [Components](/design-system/components).
-- **Light and dark themes** with runtime switching. See [Theme](/customization/theme).
-- **i18n** — English and Ukrainian, runtime locale switch.
-- **MDX docs system** — `MDXDoc` + `MDXDocAnchors` for the in-app documentation rendering.
+- **Application shell** with authentication, routing, permissions, feature flags, theming, localized navigation, and protected routes.
+- **Dashboards** for Application and Assessments with KPI rows, operational summaries, and `@nivo` charts. See [UI Patterns -> Dashboards](/ui-patterns/dashboards).
+- **Customers module** with client-side and server-side table strategies, customer details, and segments as saved filters. See [Modules -> Customers](/modules/customers).
+- **Assessments module** with list, details, queue, dashboard, findings, evidence requests, and decision workflow. See [Modules -> Assessments](/modules/assessments).
+- **Accounts module** with users, roles, abilities, and the ability matrix UI. See [Modules -> Accounts](/modules/accounts).
+- **Settings module** with language, theme, sidebar mode, developer debug translations, and feature flag management. See [Modules -> Settings](/modules/settings).
+- **Profile module** with name and email, avatar crop, and password change. See [Modules -> Profile](/modules/profile).
+- **Auth module** with sign in, sign up, and send password flows. See [Modules -> Auth](/modules/auth).
+- **Shared component library** with documented Coreola components, MUI wrappers, and Storybook stories. See [Components](/design-system/components).
+- **In-app documentation system** using localized MDX pages, `MDXDoc`, and `MDXDocAnchors`.
+- **English and Ukrainian localization** with runtime language switching.
+- **Mock backend** powered by json-server for local development, demos, and generated data.
+- **Developer tooling** for builds, linting, Storybook, Plop generators, and documentation scaffolding.
 
 ---
 
@@ -62,17 +49,15 @@ The current shipping snapshot.
 
 Coreola follows [SemVer](https://semver.org/):
 
-- **Major (1.x.0)** — breaking changes to the surface (route shape, model-hook contracts, public component APIs, theme tokens with names like `palette.color.chart`).
-- **Minor (0.x.0)** — new features added without removing existing ones.
-- **Patch (0.x.y)** — fixes that do not change the surface.
-
-Before 1.0, treat **minor** as potentially breaking — the surface is still solidifying.
+- **Major (x.0.0)** - breaking changes to the surface (route shape, model-hook contracts, public component APIs, theme tokens with names like `palette.color.chart`).
+- **Minor (x.y.0)** - new features added without removing existing ones.
+- **Patch (x.y.z)** - fixes that do not change the public surface.
 
 ---
 
 ## Upgrading your fork
 
-Most teams fork Coreola once and evolve it. There is no official "upgrade" mechanism — merging upstream changes is a manual reconciliation.
+Most teams fork Coreola once and evolve it. There is no official "upgrade" mechanism - merging upstream changes is a manual reconciliation.
 
 A pragmatic workflow:
 
@@ -81,7 +66,7 @@ A pragmatic workflow:
 3. Resolve conflicts in your fork's branding, routes, and feature modules.
 4. Run `npm run build`, `npm run lint`, `npm test`, and the UI smoke tests.
 
-For larger upstream changes (a new pattern, a refactor of a primitive), consider doing the same change yourself rather than merging — it lets you keep the diff smaller and your fork's narrative cleaner.
+For larger upstream changes (a new pattern, a refactor of a primitive), consider doing the same change yourself rather than merging - it lets you keep the diff smaller and your fork's narrative cleaner.
 
 ---
 
@@ -89,9 +74,9 @@ For larger upstream changes (a new pattern, a refactor of a primitive), consider
 
 When a Coreola release is marked breaking, the changelog entry includes:
 
-- **What broke** — the old shape and the new one.
-- **Why** — the reason for the change (often a bug or a tighter contract).
-- **Migration** — a code-level recipe for adapters.
+- **What broke** - the old shape and the new one.
+- **Why** - the reason for the change (often a bug or a tighter contract).
+- **Migration** - a code-level recipe for adapters.
 
 If you ship Coreola as a product foundation to multiple internal teams, mirror this discipline in your own changelog.
 
@@ -105,5 +90,5 @@ If you find a bug or have a suggestion for the Coreola template itself, file it 
 
 ## Next steps
 
-- [Architecture](/overview/architecture) — the surfaces this changelog tracks
-- [Adding a New Module](/customization/adding-new-module) — the place most of your fork's diffs live
+- [Architecture](/overview/architecture) - the surfaces this changelog tracks
+- [Adding a New Module](/customization/adding-new-module) - the place most of your fork's diffs live

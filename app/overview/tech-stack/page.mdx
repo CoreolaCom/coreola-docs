@@ -310,9 +310,9 @@ The code generator. Custom generators in `plop/templates.cjs` create:
 - `component-doc` — showcase component with localized MDX
 - `documentation-page` — documentation page (the kind you are reading)
 
-#### storybook scripts
+#### Storybook
 
-Optional component-library browser. Coreola reserves `npm run storybook` and `npm run build-storybook` scripts, but Storybook packages and `.storybook/` configuration are not initialized by default. See [Storybook](/development/storybook) before using those scripts.
+Component-library browser, configured and ready to run. Coreola ships with Storybook 8 (`@storybook/react-vite`), the `essentials`, `a11y`, and `themes` addons, a `.storybook/` config with theme + i18n + Redux + router decorators, and 43 `*.stories.tsx` files — one per component in `src/components/`. Run `npm run storybook` for the dev server or `npm run build-storybook` for a static build. See [Storybook](/development/storybook).
 
 #### rollup-plugin-visualizer
 

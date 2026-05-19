@@ -24,7 +24,7 @@ Optional but useful:
 ## 1. Clone the repository
 
 ```bash
-git clone <your-coreola-repo-url> coreola-mui
+git clone https://github.com/coreolacom/coreola-mui-v1.git coreola-mui
 cd coreola-mui
 ```
 
@@ -137,16 +137,23 @@ If anything is missing, see [Running Locally → Troubleshooting](/getting-start
 
 ---
 
-## Optional: Storybook
+## 8. Storybook
 
-Storybook is optional and not initialized in a fresh checkout. To add it as an isolated component sandbox:
+Storybook is configured for Coreola and the component library includes stories for shared components. Use it when you need to inspect component states, review visual behavior, or work on isolated UI changes outside the full application shell.
+
+Start Storybook with:
 
 ```bash
-npx storybook@latest init
 npm run storybook
 ```
 
-Pick `@storybook/react-vite` when prompted and wire the Coreola providers in `.storybook/preview.tsx`. After setup, Storybook serves on port `6006` at `http://localhost:6006`.
+Storybook runs on port `6006` at:
+
+```
+http://localhost:6006
+```
+
+The setup uses `@storybook/react-vite` and the shared Coreola providers from `.storybook/preview.tsx`, so stories render with the same theme, routing context, and application-level wrappers used by the product UI.
 
 ---
 

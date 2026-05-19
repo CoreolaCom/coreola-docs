@@ -33,27 +33,35 @@ From `src/api/assessments/assessments.types.ts`:
 The primary entity. Key fields:
 
 - `id`, `key` (human-readable id), `title`, `type`, `framework`
-- `status` — workflow status (e.g., `needs_review`, `waiting_for_evidence`, `remediation_in_progress`, `blocked`, `overdue`, `closed`)
+- `status` — workflow status; one of `draft`, `intake`, `in_review`, `waiting_for_evidence`, `remediation_in_progress`, `blocked`, `approved`, `approved_with_exceptions`, `rejected`, `completed`, `archived` (11 states; valid transitions are enforced by the backend `status_options` returned from `meta`)
 - `priority`, `risk_level`, `decision`
-- `owner`, `reviewer`, `customer` — related entities
-- `findings_count`, `evidence_requests_count`
-- `due_date`, `tags`, `control_sets`
+- `owner`, `reviewer`, `relationship_owner`, `customer` — related entities
+- `findings_count`, `open_findings_count`, `evidence_requests_count`, `overdue_evidence_requests_count`, `exceptions_count`
+- `is_overdue`, `has_blocking_findings`
+- `inherent_risk_score`, `residual_risk_score`, `confidence_score`, `progress`
+- `due_date`, `next_review_at`, `submitted_at`, `completed_at`, `tags`, `control_sets`
 
 #### `AssessmentFinding`
 
 A finding raised against an assessment.
 
-- `id`, `assessment_id`, `title`, `category`
-- `severity`, `status` (`open` / `in_progress` / `resolved` / `closed`)
-- `owner_id`, `due_date`
+- `id`, `assessment_id`, `title`, `category` (one of 8: `access_control`, `data_retention`, `encryption`, `logging`, `vulnerability_management`, `vendor_governance`, `privacy`, `resilience`)
+- `severity` — one of `low`, `medium`, `high`, `critical`
+- `status` — one of `open`, `accepted_risk`, `in_progress`, `resolved`, `closed` (5 states)
+- `owner_id`, `due_date`, `description`, `recommendation`, `accepted_risk_reason`, `resolution_note`
+- `evidence_ids` — links back to the evidence requests that resolve the finding
+- `invalid` — soft-flag for findings that were raised in error
 
 #### `EvidenceRequest`
 
 A request for supporting documentation.
 
-- `id`, `assessment_id`, `title`
-- `status` (`requested` / `in_review` / `received` / `rejected`)
-- `recipient_id`, `due_date`, `file_count`
+- `id`, `assessment_id`, `title`, `request_note`, `control_ref`
+- `status` — one of `requested`, `in_review`, `received`, `rejected`, `cancelled`, `expired` (6 states)
+- `recipient_id`, `recipient` — the external party fulfilling the request (not always an internal user)
+- `requested_at`, `due_date`, `received_at` — three time dimensions tracking the request lifecycle
+- `file_count` — number of files attached by the recipient
+- `archived` — soft-archive flag for completed requests no longer in active view
 
 #### `AssessmentActivity`
 

@@ -1,0 +1,177 @@
+# Helpers
+
+Coreola groups cross-cutting utility code in `src/helpers/`. These are framework-agnostic functions — no React, no JSX — that handle API plumbing, RBAC, date math, form helpers, persistence, and other shared concerns.
+
+For the React-bound counterparts (hooks that build on these helpers), see [Hooks](/reference/hooks).
+
+- Source: `src/helpers/`
+- Import: `import helperName from 'helpers/<file>'` or `import { fnName } from 'helpers/<file>'`
+
+---
+
+## API and data fetching
+
+#### `helpers/baseQuery.ts`
+
+The shared RTK Query base query factory used by every API slice.
+
+- `getBaseQuery(path, targetAPI)` — Returns a configured base query that injects the `Authorization` header from the auth slice, tracks in-flight requests, raises snackbar errors for failures, and normalizes JSON-server array responses into the project's `Pagination` shape.
+- `Pagination` (type) — `{ page, limit, pages, total, items }` envelope used across paginated endpoints.
+
+Use this in every new API slice rather than crafting a `fetchBaseQuery` by hand — it gives you auth, error notifications, and pagination normalization for free.
+
+#### `helpers/checkTokenIsValid.ts`
+
+JWT expiration check.
+
+- `checkTokenIsValid(accessToken: string, now: number): boolean` — Decodes the token's `exp` claim and returns `true` if it is still in the future.
+
+Used by the auth slice's refresh logic and by the `useAbility` / `useFeatureFlag` setup to decide whether to fetch protected data.
+
+---
+
+## RBAC
+
+#### `helpers/rbac.ts`
+
+The whole RBAC plumbing. Most app code only needs the hook (`useAbility`); this file is what powers it.
+
+- `buildAbilityFromMatrix(abilitiesMatrix?)` — Constructs a CASL `AppAbility` from the user's `abilities` matrix; entries with `true` become `can(action, subject)` rules.
+- `canAnyAbility(ability, abilityCan?)` — Returns `true` when **any** of the required `subject.action` keys are allowed. Missing/empty requirements pass by default.
+- `buildFeatureFlagsMap(features?)` — Converts the features API payload into a `Record<string, boolean>` lookup.
+- `canFeatureFlag(featureFlags, featureKey)` — Single-key feature check.
+- `canAnyFeatureFlag(featureFlags, featureFlagCan?)` — Multi-key feature check. Passes by default while flags are still loading, so route filtering doesn't hide flagged routes prematurely.
+- `filterRoutesByAbility(routes, ability, parentPath?, featureFlags?)` — Recursively filters a route tree by ability + flags, rewrites child redirects that point to filtered-out targets, and keeps `public` / wildcard routes.
+- `AppAbility`, `FeatureFlagsMap` (types) — Re-exported for callers.
+
+See [Permissions](/customization/permissions) for the conceptual model.
+
+---
+
+## Forms and validation
+
+#### `helpers/dirtyData.ts`
+
+- `dirtyData(dirtyFields, allValues)` — Picks **only** the dirty fields out of `react-hook-form`'s values and trims any string values along the way. The shape ready to send to a PATCH endpoint.
+
+#### `helpers/fieldsFromError.ts`
+
+- `fieldsFromError(errors, values)` — Maps `react-hook-form`'s `FieldErrors` to a `{ error, helperText }` object per field, ready to spread on MUI inputs.
+- `FieldErrorState` (type) — `{ error?: boolean; helperText?: string }`.
+
+`useFieldsFromError` is the hook wrapper around this — use the hook in components; use the function inside other helpers.
+
+#### `helpers/formatPhoneNumber.ts`
+
+- `formatPhoneNumber(phoneNumber, countryCode?)` — Formats a raw phone string using the project's mask configuration, auto-detecting the country when no `countryCode` is supplied. Returns `''` for non-string/non-number input.
+
+#### `helpers/filters.ts`
+
+- `getFilterChipLabel(filter, selectedValues)` — Builds the compact chip text shown for an active table filter — e.g., `Status: Active +2` (first option name plus a count of additional selections).
+
+---
+
+## Date utilities
+
+#### `helpers/dateUtils.ts`
+
+Luxon-based helpers configured for the active i18n locale.
+
+- `getDate(date, dateFormat)` — Formats an ISO date string. Accepts either a Luxon format token string (e.g., `'dd LLL yyyy'`) or an `Intl.DateTimeFormatOptions` object.
+- `getDaysDiffFromToday(date)` — Whole days between an ISO date and today (clamped to `0`).
+- `formatDaysAsDuration(totalDays)` — Renders a number of days as a localized "1 year • 2 months • 5 days" string.
+
+Use these instead of bare `Date` / `toLocaleString` — they respect the user's selected locale automatically.
+
+---
+
+## i18n
+
+#### `helpers/phrase.ts`
+
+- `phrase(phrases, translation, options, target)` — Returns a lookup function that translates `phrases[key]` against the active i18n instance. Falls back to the original phrase key when the translation is missing, with a console hint in dev mode.
+
+Powers the `usePhrase` hook — see Hooks for the React-side API.
+
+#### `helpers/getNamespaces.ts`
+
+- `getNamespaces(routes)` — Walks a route tree and returns all i18n `namespace` declarations in traversal order. Used at app bootstrap to know which namespace bundles to load.
+
+---
+
+## Persistence
+
+#### `helpers/getPersistData.ts`
+
+- `getPersistData(key)` — Reads a `redux-persist` entry from `localStorage` and double-decodes its nested JSON. Returns `{}` if the key is missing.
+
+#### `helpers/persistPurgeCheck.ts`
+
+- `persistPurgeCheck()` — Compares the stored app version against `import.meta.env.VITE_APP_VERSION`. On a version bump, clears persisted slices, busts the service worker cache, and force-reloads the page. Call once at app startup.
+
+This is how an upgraded Coreola build avoids running with stale persisted state from a previous version.
+
+---
+
+## Browser and DOM
+
+#### `helpers/canvas.ts`
+
+Image-manipulation primitives, used by the avatar editor flow.
+
+- `createImage(url)` — Loads an `HTMLImageElement` from a URL with `crossOrigin = 'anonymous'`.
+- `getRadianAngle(degrees)` — Trivial degrees → radians conversion (re-exported for downstream code).
+- `rotateSize(width, height, rotation)` — Bounding-box dimensions for a rotated rectangle.
+- `getCroppedImg(imageSrc, pixelCrop, rotation?, flip?)` — Returns a JPEG `Blob` of the cropped/rotated/flipped region.
+- `blobToBase64(blob)` — `Blob` → `data:` URL.
+
+#### `helpers/snackBarUtils.ts`
+
+Imperative snackbar API, usable outside React.
+
+- `SnackbarUtilsConfigurator` (component) — Mount once under `<SnackbarProvider>` to capture the notistack handle.
+- `snacks` — `success / warning / info / error / toast / closeSnackbar` methods.
+- `dismissNotification(key)` — Returns a callback that dismisses a snackbar by key (useful for "Undo"-style snackbars).
+
+Use this from RTK Query error handlers, route guards, or any other non-component code. From inside components, you can call `snacks` directly too.
+
+---
+
+## Styling
+
+#### `helpers/styledProps.ts`
+
+- `styledProps` — MUI `styled()` options object whose `shouldForwardProp` filters out any prop starting with `$`. Pass to `styled('div', styledProps)` to define transient props that don't leak to the DOM.
+
+A two-line module that prevents dozens of console warnings about unknown DOM attributes.
+
+---
+
+## Small utilities
+
+#### `helpers/utils.ts`
+
+- `randomIntFromInterval(min, max)` — Inclusive random integer.
+
+#### `helpers/voidFromPromise.ts`
+
+- `voidFromPromise(fn)` — Wraps a sync-or-async callback so it returns `void` and swallows (but logs) any rejection. Use to pass async handlers to props typed `() => void` (button `onClick`, form `onSubmit` outside react-hook-form).
+
+---
+
+## Anti-patterns
+
+- **Building a `fetchBaseQuery` from scratch in a new API slice.** Use `getBaseQuery` so auth, errors, and pagination stay consistent.
+- **Calling `localStorage.getItem('persist:app')` directly.** Use `getPersistData` so the nested JSON is decoded for you.
+- **Importing CASL directly in components.** Use `useAbility` (and let `rbac.ts` build the ability) so the matrix-to-ability conversion stays in one place.
+- **Custom date math with `Date.now() - x`.** Use `getDaysDiffFromToday` / Luxon so DST and locale are handled.
+- **Defining transient styled-component props without `styledProps`.** You'll spam the console with React's "unknown DOM attribute" warning.
+
+---
+
+## Next steps
+
+- [Hooks](/reference/hooks) — the React-bound counterparts that wrap these helpers.
+- [Permissions](/customization/permissions) — how `rbac.ts` fits the bigger RBAC story.
+- [API Layer](/development/api-layer) — where `baseQuery.ts` plugs in.
+- [State Management](/development/state-management) — what `getPersistData` and `persistPurgeCheck` are persisting.

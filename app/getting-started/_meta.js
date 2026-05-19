@@ -1,7 +1,6 @@
 export default {
-  'introduction': 'Introduction',
-  'installation': 'Installation',
+  installation: 'Installation',
   'project-structure': 'Project Structure',
-  'environment': 'Environment',
+  environment: 'Environment',
   'running-locally': 'Running Locally',
 };
