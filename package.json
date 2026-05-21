@@ -1,6 +1,6 @@
 {
   "name": "coreola-docs",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "private": true,
   "dependencies": {
     "next": "^16.2.4",
