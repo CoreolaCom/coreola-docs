@@ -81,7 +81,7 @@ const footerLinks = {
   resources: [
     { href: 'https://www.creem.io/payment/prod_4037pi4AFwWujqs5awaY6x', label: 'Buy Coreola Personal', external: true },
     { href: 'https://www.creem.io/payment/prod_1zekDVxqI1aFTBDJWrLXG7', label: 'Buy Coreola Team', external: true },
-    { href: 'https://docs.coreola.com/changelog', label: 'Changelog', external: true },
+    { href: 'https://docs.coreola.com/changelog', label: 'Changelog' },
     { href: 'mailto:info@coreola.com', label: 'Contact' },
   ],
   legal: [
