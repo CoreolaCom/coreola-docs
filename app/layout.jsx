@@ -333,6 +333,15 @@ export default async function RootLayout({ children }) {
       // ... Your additional head options
       >
         {/* Your additional tags should be passed as `children` of `<Head>` element */}
+        <!-- Google tag (gtag.js) -->
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-6HGSWTL985"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', 'G-6HGSWTL985');
+        </script>
       </Head>
       <body>
         <Layout
